@@ -787,6 +787,307 @@
       ctx.restore();
     };
 
+    // --- Rare visitors: stingray, baby stingray, baby whale shark ---
+    // They swim through every once in a while (rare), one at a time,
+    // sometimes a couple together. They ignore waves and cucumber;
+    // they eat seaweed when it's offered while they're passing through.
+    const visitors = [];
+    const splashes = [];
+    let nextVisitorAt = 0;   // rAF timestamp of the next spawn
+    let foodKind = 'cucumber';   // 'cucumber' normally, 'seaweed' while a visitor is here
+    let foodBtnKind = 'cucumber'; // what the food button currently shows
+
+    // The food button's two icons (cucumber slice / seaweed sprig).
+    const CUCUMBER_SVG = `<svg viewBox="0 0 24 24" fill="none" class="w-8 h-8"><circle cx="12" cy="12" r="10" fill="#134d24" stroke="#0a2e12" stroke-width="0.5"/><circle cx="12" cy="12" r="8.5" fill="#7dce94" /><circle cx="12" cy="12" r="7" fill="#e2f5e6" /><path d="M12 12 Q 15 8 16 12 Q 15 16 12 12" fill="#b6e3c4" transform="rotate(0 12 12)"/><path d="M12 12 Q 15 8 16 12 Q 15 16 12 12" fill="#b6e3c4" transform="rotate(120 12 12)"/><path d="M12 12 Q 15 8 16 12 Q 15 16 12 12" fill="#b6e3c4" transform="rotate(240 12 12)"/><ellipse cx="14" cy="11.5" rx="0.8" ry="0.4" fill="#fff" transform="rotate(30 14 11.5)"/><ellipse cx="14" cy="12.5" rx="0.8" ry="0.4" fill="#fff" transform="rotate(-30 14 12.5)"/><ellipse cx="10" cy="10" rx="0.8" ry="0.4" fill="#fff" transform="rotate(150 10 10)"/><ellipse cx="11" cy="9" rx="0.8" ry="0.4" fill="#fff" transform="rotate(90 11 9)"/><ellipse cx="10" cy="14" rx="0.8" ry="0.4" fill="#fff" transform="rotate(210 10 14)"/><ellipse cx="11" cy="15" rx="0.8" ry="0.4" fill="#fff" transform="rotate(270 11 15)"/></svg>`;
+    const SEAWEED_SVG = `<svg viewBox="0 0 24 24" fill="none" class="w-8 h-8"><path d="M7 21 C 5 16, 9 12, 7 7 C 6 4, 8 2, 8 2" stroke="#22c55e" stroke-width="2" stroke-linecap="round"/><path d="M12 21 C 10 15, 14 11, 12 6 C 11 3, 13 2, 13 2" stroke="#16a34a" stroke-width="2" stroke-linecap="round"/><path d="M17 21 C 15 16, 19 13, 17 8 C 16 5, 18 3, 18 3" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/></svg>`;
+
+    // While a visitor is here the food button turns into seaweed (to feed
+    // them); when they leave it turns back into cucumber (for the turtles).
+    // Any uneaten seaweed drifts away when the visitors leave.
+    function updateFoodButton(){
+      const want = visitors.length > 0 ? 'seaweed' : 'cucumber';
+      if (want === foodBtnKind) return;
+      foodBtnKind = want;
+      foodKind = want;
+      foodBtn.innerHTML = want === 'seaweed' ? SEAWEED_SVG : CUCUMBER_SVG;
+      foodBtn.title = want === 'seaweed' ? 'Feed seaweed to the visitors' : 'Feeding Mode';
+      foodBtn.setAttribute('aria-label', foodBtn.title);
+      if (want === 'cucumber') {
+        gameState.food = gameState.food.filter(f => f.kind !== 'seaweed');
+      }
+    }
+
+    // A tiny splash of water (droplets + a gentle ring) for when the
+    // baby whale shark enters or leaves.
+    function makeSplash(x, y){
+      splashes.push({ x, y, age: 0, life: 50 });
+      gameState.waves.push({ x, y, age: 0, life: 70, speed: 1.6, source: 'splash' });
+    }
+
+    function spawnVisitor(kind, x, y, dir){
+      const base = {
+        stingray:     { speed: 0.55, scale: 0.9 },
+        babyStingray: { speed: 0.50, scale: 0.5 },
+        whaleShark:   { speed: 0.42, scale: 1.0 }
+      }[kind];
+      const v = {
+        kind, x, y, dir,
+        speed: base.speed, scale: base.scale,
+        angle: dir === 1 ? 0 : Math.PI,
+        targetAngle: dir === 1 ? 0 : Math.PI,
+        phase: Math.random() * Math.PI * 2,
+        timeOffset: Math.random() * 10000
+      };
+      visitors.push(v);
+      if (kind === 'whaleShark') makeSplash(x, y);
+      return v;
+    }
+
+    function scheduleVisitors(time, width, height){
+      if (nextVisitorAt === 0) {
+        // first visit comes soon (12-18s) so you don't have to wait to see one
+        nextVisitorAt = time + 12000 + Math.random() * 6000;
+        return;
+      }
+      if (time < nextVisitorAt) return;
+      if (visitors.length > 0) return;   // one visit at a time
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      const y = height * (0.15 + Math.random() * 0.65);
+      const x = dir === 1 ? -260 : width + 260;
+      // stingray 40%, baby stingray 35%, whale shark 25% (the rarest)
+      const r = Math.random();
+      const kind = r < 0.4 ? 'stingray' : r < 0.75 ? 'babyStingray' : 'whaleShark';
+      spawnVisitor(kind, x, y, dir);
+      // sometimes a couple swims through together (30%)
+      if (Math.random() < 0.3) {
+        const r2 = Math.random();
+        const kind2 = r2 < 0.4 ? 'stingray' : r2 < 0.75 ? 'babyStingray' : 'whaleShark';
+        const y2 = Math.min(height * 0.85, Math.max(height * 0.15, y + (Math.random() < 0.5 ? -1 : 1) * (90 + Math.random() * 70)));
+        spawnVisitor(kind2, x - dir * (180 + Math.random() * 100), y2, dir);
+      }
+      // the gap to the next visit starts when THIS visit ends
+      // (see updateVisitors) — not here, or visits would run back-to-back
+    }
+
+    function updateVisitors(time, dt, width, height){
+      scheduleVisitors(time, width, height);
+      const hadVisitors = visitors.length > 0;
+      for (let i = visitors.length - 1; i >= 0; i--) {
+        const v = visitors[i];
+        // steer toward nearby seaweed (only if it's roughly ahead of it)
+        let target = null;
+        if (gameState.food.length > 0) {
+          let best = null, bestD = Infinity;
+          gameState.food.forEach((f, idx) => {
+            if (f.kind !== 'seaweed') return;
+            const dx = f.x - v.x, dy = f.y - v.y;
+            const d = Math.hypot(dx, dy);
+            const ang = Math.atan2(dy, dx);
+            let diff = ang - v.angle;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            if (Math.abs(diff) < 1.75 && d < bestD) { bestD = d; best = { f, idx, d }; }
+          });
+          if (best && bestD < 600) target = best;
+        }
+        if (target) {
+          v.targetAngle = Math.atan2(target.f.y - v.y, target.f.x - v.x);
+          if (target.d < 55 * v.scale) gameState.food.splice(target.idx, 1);
+        } else {
+          v.targetAngle = v.dir === 1 ? 0 : Math.PI;
+        }
+        let diff = v.targetAngle - v.angle;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        v.angle += diff * 0.03 * dt;
+        v.x += Math.cos(v.angle) * v.speed * dt;
+        v.y += Math.sin(v.angle) * v.speed * dt;
+        // keep it in the water vertically; if it drifts to an edge, turn it back
+        if (v.y < 50 || v.y > height - 50) {
+          v.y = Math.max(50, Math.min(height - 50, v.y));
+          v.angle = v.dir === 1 ? 0 : Math.PI;
+        }
+        // off the far edge = it has left; the whale shark splashes as it goes
+        if ((v.dir === 1 && v.x > width + 320) || (v.dir === -1 && v.x < -320)) {
+          if (v.kind === 'whaleShark') makeSplash(v.dir === 1 ? width - 10 : 10, v.y);
+          visitors.splice(i, 1);
+        }
+      }
+      // a visit just ended — the next one comes in 60-120s (rare)
+      if (hadVisitors && visitors.length === 0) {
+        nextVisitorAt = time + 60000 + Math.random() * 60000;
+      }
+      updateFoodButton();
+    }
+
+    // Seaweed sprig (what the visitors eat) — a few wavy green blades.
+    function drawSeaweed(ctx, f){
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      ctx.rotate(f.rot);
+      ctx.shadowColor = 'rgba(0, 15, 30, 0.7)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 3;
+      const s = f.size;
+      ctx.lineCap = 'round';
+      const blades = [
+        { x: -s * 0.5, c: '#22c55e', w: 2.2 },
+        { x: 0,        c: '#16a34a', w: 2.6 },
+        { x: s * 0.5,  c: '#4ade80', w: 2.2 }
+      ];
+      blades.forEach((b, i) => {
+        ctx.beginPath();
+        ctx.moveTo(b.x, s * 0.8);
+        ctx.bezierCurveTo(b.x - s * 0.3, s * 0.2, b.x + s * 0.3, -s * 0.2, b.x + (i - 1) * s * 0.15, -s * 0.9);
+        ctx.strokeStyle = b.c;
+        ctx.lineWidth = Math.max(1, b.w * (s / 9));
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+
+    // Stingray, top-down, facing +x in local space (the caller rotates it
+    // to the travel direction). The baby stingray uses the same drawing
+    // at a smaller scale. Grey-brown diamond body, long whip tail.
+    function drawStingray(ctx, time, v){
+      const t = time + v.timeOffset;
+      const flap = Math.sin(t * 0.004 + v.phase) * 5;
+      const wobble = Math.sin(t * 0.002 + v.phase) * 0.04;
+      const sc = Math.min(1, Math.min(canvas.width, canvas.height) / 900) * v.scale;
+      ctx.save();
+      ctx.translate(v.x, v.y + Math.sin(t * 0.001) * 6);
+      ctx.rotate(v.angle + wobble);
+      ctx.scale(sc, sc);
+      // tail first (so the body overlaps its base) — a thin whip that sways
+      ctx.strokeStyle = '#6b6257';
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 6; i++) {
+        const x0 = -85 - i * 18;
+        const y0 = Math.sin(t * 0.006 + i * 0.9) * 6 * (i / 6);
+        const x1 = -85 - (i + 1) * 18;
+        const y1 = Math.sin(t * 0.006 + (i + 1) * 0.9) * 6 * ((i + 1) / 6);
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.lineWidth = Math.max(0.8, 3 - i * 0.45);
+        ctx.stroke();
+      }
+      // body: a diamond with curved wings
+      const grad = ctx.createRadialGradient(0, 0, 10, 0, 0, 120);
+      grad.addColorStop(0, '#8a7f72');
+      grad.addColorStop(0.7, '#6b6257');
+      grad.addColorStop(1, '#544d42');
+      ctx.beginPath();
+      ctx.moveTo(95, 0);
+      ctx.bezierCurveTo(70, -55, 45, -95, 5, -108 + flap);
+      ctx.bezierCurveTo(-35, -95, -70, -45, -85, 0);
+      ctx.bezierCurveTo(-70, 45, -35, 95, 5, 108 - flap);
+      ctx.bezierCurveTo(45, 95, 70, 55, 95, 0);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(230, 220, 205, 0.5)';
+      ctx.stroke();
+      // two small eyes near the front
+      ctx.fillStyle = '#2b2620';
+      ctx.beginPath(); ctx.arc(58, -13, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(58, 13, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // Baby whale shark, top-down, facing +x in local space. Long torpedo
+    // body, wide flat head, white spots and pale stripes on a grey-blue
+    // back, pectoral fins, and a tail that sways as it swims.
+    const WHALE_SPOTS = (() => {
+      // deterministic spots so they don't flicker between frames
+      let seed = 1234567;
+      const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+      const spots = [];
+      for (let i = 0; i < 80; i++) {
+        const x = -160 + rnd() * 360;
+        const halfW = x > 80 ? 70 - (x - 80) * 0.35 : x < -100 ? 66 - (-100 - x) * 0.8 : 68;
+        const y = (rnd() * 2 - 1) * Math.max(8, halfW - 8);
+        spots.push({ x, y, r: 1.5 + rnd() * 1.8 });
+      }
+      return spots;
+    })();
+    function drawWhaleShark(ctx, time, v){
+      const t = time + v.timeOffset;
+      const sway = Math.sin(t * 0.003 + v.phase) * 0.16;
+      const sc = Math.min(1, Math.min(canvas.width, canvas.height) / 900) * v.scale;
+      ctx.save();
+      ctx.translate(v.x, v.y + Math.sin(t * 0.001) * 6);
+      ctx.rotate(v.angle + Math.sin(t * 0.002 + v.phase) * 0.03);
+      ctx.scale(sc, sc);
+      // tail fin (sways side to side) — a crescent at the back
+      ctx.save();
+      ctx.translate(-170, 0);
+      ctx.rotate(sway);
+      ctx.beginPath();
+      ctx.moveTo(0, -14);
+      ctx.quadraticCurveTo(-38, -52, -62, -46);
+      ctx.quadraticCurveTo(-42, -18, -30, 0);
+      ctx.quadraticCurveTo(-42, 18, -62, 46);
+      ctx.quadraticCurveTo(-38, 52, 0, 14);
+      ctx.closePath();
+      ctx.fillStyle = '#3a4a5a';
+      ctx.fill();
+      ctx.restore();
+      // pectoral fins (swept back, one each side near the head)
+      [-1, 1].forEach(side => {
+        ctx.beginPath();
+        ctx.moveTo(95, side * 58);
+        ctx.quadraticCurveTo(45, side * 108, 5, side * 96);
+        ctx.quadraticCurveTo(55, side * 62, 95, side * 58);
+        ctx.closePath();
+        ctx.fillStyle = '#42536a';
+        ctx.fill();
+      });
+      // body: long torpedo, wide at the head, tapering to the tail
+      const grad = ctx.createLinearGradient(0, -72, 0, 72);
+      grad.addColorStop(0, '#5a6a7a');
+      grad.addColorStop(0.5, '#42536a');
+      grad.addColorStop(1, '#2e3a46');
+      ctx.beginPath();
+      ctx.moveTo(210, 0);
+      ctx.bezierCurveTo(200, -45, 150, -70, 80, -72);
+      ctx.bezierCurveTo(0, -70, -100, -40, -170, -16);
+      ctx.lineTo(-170, 16);
+      ctx.bezierCurveTo(-100, 40, 0, 70, 80, 72);
+      ctx.bezierCurveTo(150, 70, 200, 45, 210, 0);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(200, 220, 235, 0.35)';
+      ctx.stroke();
+      // pale stripes across the back
+      ctx.strokeStyle = 'rgba(220, 235, 245, 0.22)';
+      ctx.lineWidth = 2;
+      [-120, -70, -20, 30, 80, 130].forEach(x => {
+        ctx.beginPath();
+        ctx.moveTo(x, -58);
+        ctx.quadraticCurveTo(x + 8, 0, x, 58);
+        ctx.stroke();
+      });
+      // white spots
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      WHALE_SPOTS.forEach(sp => {
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      // wide mouth line at the front
+      ctx.strokeStyle = 'rgba(20, 30, 40, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(185, -28);
+      ctx.quadraticCurveTo(205, 0, 185, 28);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // --- Main Render Loop ---
     let lastTime = 0;
     function render(time) {
@@ -855,6 +1156,7 @@
       // 3. Food
       gameState.food.forEach(f => {
         f.size += (f.targetSize - f.size) * 0.1 * dt;
+        if (f.kind === 'seaweed') { drawSeaweed(ctx, f); return; }
         
         ctx.save();
         ctx.translate(f.x, f.y);
@@ -962,7 +1264,7 @@
         let nearestWaveDist = Infinity;
         let nearestWave = null;
         gameState.waves.forEach(w => {
-          if (w.source === 'food' || w.source === 'waterfall') return; // food drops and the waterfall don't scare turtles
+          if (w.source === 'food' || w.source === 'waterfall' || w.source === 'splash') return; // food, waterfall and splashes don't scare turtles
           const dist = Math.hypot(w.x - t.x, w.y - t.y);
           if (dist < nearestWaveDist) {
             nearestWaveDist = dist;
@@ -979,6 +1281,7 @@
           let nearestFood = null;
           let nearestDist = Infinity;
           gameState.food.forEach((f, index) => {
+            if (f.kind && f.kind !== 'cucumber') return; // turtles only eat cucumber
             const dist = Math.hypot(f.x - t.x, f.y - t.y);
             if (dist < nearestDist) {
               nearestDist = dist;
@@ -1150,6 +1453,28 @@
       ctx.restore();
     }
 
+      // 5.5 Rare visitors (stingray / baby stingray / baby whale shark)
+      updateVisitors(time, dt, width, height);
+      visitors.forEach(v => {
+        if (v.kind === 'whaleShark') drawWhaleShark(ctx, time, v);
+        else drawStingray(ctx, time, v);
+      });
+      // tiny splashes (baby whale shark entering / leaving)
+      for (let i = splashes.length - 1; i >= 0; i--) {
+        const sp = splashes[i];
+        sp.age += dt;
+        if (sp.age >= sp.life) { splashes.splice(i, 1); continue; }
+        const prog = sp.age / sp.life;
+        for (let j = 0; j < 6; j++) {
+          const a = -Math.PI / 2 + (j - 2.5) * 0.35;
+          const d = prog * 26;
+          ctx.beginPath();
+          ctx.arc(sp.x + Math.cos(a) * d, sp.y + Math.sin(a) * d - prog * prog * 10, Math.max(0.5, 2.5 * (1 - prog)), 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(230, 245, 255, ${0.8 * (1 - prog)})`;
+          ctx.fill();
+        }
+      }
+
       // 6. Particles
       particles.forEach(p => {
         p.y -= p.speed * dt;
@@ -1184,7 +1509,7 @@
       const clampedX = Math.max(foodPadding * -1, Math.min(canvas.width + foodPadding, x));
       const clampedY = Math.max(foodPadding * -1, Math.min(canvas.height + foodPadding, y));
       if (mode === 'food') {
-        gameState.food.push({ x: clampedX, y: clampedY, size: 0, targetSize: 7, rot: Math.random() * Math.PI * 2 });
+        gameState.food.push({ x: clampedX, y: clampedY, size: 0, targetSize: foodKind === 'seaweed' ? 9 : 7, rot: Math.random() * Math.PI * 2, kind: foodKind });
         // mark waves created by food drops so turtles won't be scared by them
         gameState.waves.push({ x: clampedX, y: clampedY, age: 0, life: 60, speed: 1.5, source: 'food' });
       } else {
