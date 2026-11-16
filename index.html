@@ -45,8 +45,8 @@
     <button
       id="muteBtn"
         class="w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md transition-all duration-300 bg-slate-900/50 border border-slate-600 text-white hover:bg-slate-800/60 shadow-lg"
-        title="Toggle Water Sound"
-        aria-label="Toggle Water Sound"
+        title="Toggle Sound"
+        aria-label="Toggle Sound"
     >
       <svg viewBox="0 0 24 24" fill="none" class="w-6 h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M11 5L6 9H3v6h3l5 4V5z" />
@@ -231,11 +231,88 @@
       }
     }
 
+    // --- Relaxing music (ORIGINAL, Web Audio — no audio files) ---
+    // Slow 60 BPM loop for the lagoon, in the same style as Slope's
+    // chiptune scheduler but low-key: soft sine pad chords
+    // (Cmaj7 - Am7 - Fmaj7 - G, one chord per bar) plus a sparse,
+    // gentle sine melody. No drums — just water and music.
+    // Starts and stops with the mute button, like the water sound.
+    var MUS_BPM = 60;
+    var MUS_STEP = 60 / MUS_BPM / 4;   // one 16th note, in seconds
+    var MUS_CHORDS = [
+      [48, 52, 55, 59],   // Cmaj7 (C3 E3 G3 B3)
+      [45, 48, 52, 55],   // Am7  (A2 C3 E3 G3)
+      [41, 45, 48, 52],   // Fmaj7 (F2 A2 C3 E3)
+      [43, 47, 50, 53]    // G    (G2 B2 D3 F3)
+    ];
+    // Melody: 64 steps (4 bars x 16), C-major pentatonic, long notes
+    // with lots of space between them — two soft notes per bar.
+    var MUS_MELODY = [
+      76,0,0,0, 0,0,0,0, 74,0,0,0, 0,0,0,0,
+      72,0,0,0, 0,0,0,0, 69,0,0,0, 0,0,0,0,
+      69,0,0,0, 0,0,0,0, 72,0,0,0, 0,0,0,0,
+      74,0,0,0, 0,0,0,0, 67,0,0,0, 0,0,0,0];
+    var musicGain = null, musTimer = null, musStep = 0, musNextTime = 0;
+    function midiToFreq(m){ return 440 * Math.pow(2, (m - 69) / 12); }
+    function mnote(midi, dur, type, vol, when){
+      if(!musicGain) return;
+      try{
+        var t = when || audioCtx.currentTime;
+        var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = type; o.frequency.setValueAtTime(midiToFreq(midi), t);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(vol, t + 0.3);   // slow fade-in (relaxing)
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        o.connect(g); g.connect(musicGain);
+        o.start(t); o.stop(t + dur + 0.05);
+      }catch(e){}
+    }
+    function musicScheduler(){
+      if(!musicGain) return;
+      while(musNextTime < audioCtx.currentTime + 0.15){
+        var s = musStep % 64;
+        if(s % 16 === 0){
+          var chord = MUS_CHORDS[Math.floor(s / 16) % 4];
+          for(var i = 0; i < chord.length; i++){
+            mnote(chord[i], MUS_STEP * 16, "sine", 0.05, musNextTime);   // pad, one bar long
+          }
+        }
+        var m = MUS_MELODY[s];
+        if(m) mnote(m, MUS_STEP * 6, "sine", 0.12, musNextTime);   // melody, soft and long
+        musStep++;
+        musNextTime += MUS_STEP;
+      }
+    }
+    function musicStart(){
+      // Resume here, inside the tap — Chrome creates the AudioContext
+      // suspended at page load, and starting sounds without resuming it
+      // produces silence (the mute button looked unmuted but nothing played).
+      if(audioCtx && audioCtx.state === "suspended"){ try{ audioCtx.resume(); }catch(e){} }
+      if(!musicGain){
+        musicGain = audioCtx.createGain();
+        musicGain.gain.value = 0.5;
+        musicGain.connect(audioCtx.destination);
+      }
+      if(musTimer) return;
+      musStep = 0;
+      musNextTime = audioCtx.currentTime + 0.05;
+      musTimer = setInterval(musicScheduler, 40);
+    }
+    function musicStop(){
+      if(musTimer){ clearInterval(musTimer); musTimer = null; }
+    }
+
     muteBtn.addEventListener('click', () => {
+      // Resume the AudioContext inside the tap — Chrome creates it
+      // suspended at page load, so starting sounds without resuming it
+      // produces silence even though the button looks unmuted.
+      if (audioCtx.state === 'suspended') { try { audioCtx.resume(); } catch (e) {} }
       if (isMuted) {
         startBrownNoise();
+        musicStart();
       } else {
         stopBrownNoise();
+        musicStop();
       }
       isMuted = !isMuted;
       updateMuteUI();
@@ -247,6 +324,7 @@
       if (document.hidden) {
         if (!isMuted) {
           stopBrownNoise();
+          musicStop();
           isMuted = true;
           updateMuteUI();
         }
@@ -882,7 +960,7 @@
         let nearestWaveDist = Infinity;
         let nearestWave = null;
         gameState.waves.forEach(w => {
-          if (w.source === 'food') return; // don't let food-drop waves scare turtles
+          if (w.source === 'food' || w.source === 'waterfall') return; // food drops and the waterfall don't scare turtles
           const dist = Math.hypot(w.x - t.x, w.y - t.y);
           if (dist < nearestWaveDist) {
             nearestWaveDist = dist;
@@ -974,6 +1052,84 @@
         drawRealisticTurtle(ctx, time, width, height, t);
       });
 
+    // --- Mini waterfall (top-right corner) ---
+    // A rock ledge with water flowing over it, like a river waterfall.
+    // The rocks are always there; the water only flows in 'water' mode
+    // (the wave setting). The ripples it makes are gentle and never
+    // scare the turtles (see the scare check — source 'waterfall').
+    let lastFallWave = 0;
+    function drawWaterfall(ctx, time, width, height){
+      const sc = Math.max(0.6, Math.min(1, width / 900));   // shrink on narrow screens
+      const fallX = width - 200 * sc;                       // left of the buttons
+      const lipY = 58;                                       // where water pours over
+      const baseY = 208;                                     // where it hits the lagoon
+      // Rocks: boulders forming the ledge along the top edge.
+      const rocks = [
+        {x: -120, y: 18, rx: 78, ry: 34},
+        {x: -40,  y: 6,  rx: 66, ry: 30},
+        {x:  42,  y: 16, rx: 72, ry: 32},
+        {x:  118, y: 8,  rx: 58, ry: 26}
+      ];
+      ctx.save();
+      rocks.forEach(r => {
+        ctx.beginPath();
+        ctx.ellipse(fallX + r.x * sc, r.y, r.rx * sc, r.ry * sc, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#5b6470';
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(20, 30, 40, 0.6)';
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(fallX + r.x * sc, r.y - r.ry * sc * 0.45, r.rx * sc * 0.7, r.ry * sc * 0.35, 0, Math.PI, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.fill();
+      });
+      // Falling water (only in water mode — the wave setting)
+      if(mode === 'water'){
+        const hw = 30 * sc;   // half-width of the falling sheet
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(fallX - hw, lipY);
+        ctx.lineTo(fallX + hw, lipY);
+        ctx.lineTo(fallX + hw + 4 * sc, baseY);
+        ctx.lineTo(fallX - hw - 4 * sc, baseY);
+        ctx.closePath();
+        const wg = ctx.createLinearGradient(0, lipY, 0, baseY);
+        wg.addColorStop(0, 'rgba(190, 235, 255, 0.75)');
+        wg.addColorStop(1, 'rgba(190, 235, 255, 0.25)');
+        ctx.fillStyle = wg;
+        ctx.fill();
+        ctx.clip();
+        // animated streaks running down the sheet
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+        ctx.lineWidth = 2;
+        for(let i = 0; i < 4; i++){
+          const sx = fallX - hw * 0.66 + i * hw * 0.44;
+          const off = (time * 0.12 + i * 40) % (baseY - lipY);
+          ctx.beginPath();
+          ctx.moveTo(sx, lipY + off);
+          ctx.lineTo(sx, lipY + off + 26);
+          ctx.stroke();
+        }
+        ctx.restore();
+        // foam at the base
+        for(let i = 0; i < 5; i++){
+          const fx = fallX - 26 * sc + i * 13 * sc;
+          const fr = 5 + Math.sin(time * 0.006 + i * 1.7) * 2;
+          ctx.beginPath();
+          ctx.arc(fx, baseY + 4, Math.max(2, fr), 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(230, 245, 255, 0.75)';
+          ctx.fill();
+        }
+        // a gentle ripple every ~1.4s
+        if(time - lastFallWave > 1400){
+          gameState.waves.push({ x: fallX + (Math.random() - 0.5) * 30, y: baseY + 6, age: 0, life: 130, speed: 1.1, source: 'waterfall' });
+          lastFallWave = time;
+        }
+      }
+      ctx.restore();
+    }
+
       // 6. Particles
       particles.forEach(p => {
         p.y -= p.speed * dt;
@@ -984,6 +1140,9 @@
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
       });
+
+      // 7. Waterfall (top-right corner, in front of the turtles)
+      drawWaterfall(ctx, time, width, height);
 
       requestAnimationFrame(render);
     }
