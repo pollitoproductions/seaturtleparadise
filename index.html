@@ -151,8 +151,10 @@
     function startBrownNoise() {
       if (brownSource) return;
       gainNode = audioCtx.createGain();
-      // slightly louder than the soft river, tuned for sink/shower clarity
-      gainNode.gain.value = 0.08;
+      // Audible bed under the music (was 0.08 — too quiet to hear).
+      // The water lives in the bright spray band (~2500 Hz) while the
+      // music sits low (130-700 Hz), so they don't mask each other.
+      gainNode.gain.value = 0.20;
       gainNode.connect(audioCtx.destination);
 
       // gentle highpass to remove mud, then a mild band character for surface sparkle
@@ -274,11 +276,11 @@
         if(s % 16 === 0){
           var chord = MUS_CHORDS[Math.floor(s / 16) % 4];
           for(var i = 0; i < chord.length; i++){
-            mnote(chord[i], MUS_STEP * 16, "sine", 0.05, musNextTime);   // pad, one bar long
+            mnote(chord[i], MUS_STEP * 16, "sine", 0.10, musNextTime);   // pad, one bar long
           }
         }
         var m = MUS_MELODY[s];
-        if(m) mnote(m, MUS_STEP * 6, "sine", 0.12, musNextTime);   // melody, soft and long
+        if(m) mnote(m, MUS_STEP * 6, "sine", 0.25, musNextTime);   // melody, soft and long
         musStep++;
         musNextTime += MUS_STEP;
       }
@@ -290,7 +292,7 @@
       if(audioCtx && audioCtx.state === "suspended"){ try{ audioCtx.resume(); }catch(e){} }
       if(!musicGain){
         musicGain = audioCtx.createGain();
-        musicGain.gain.value = 0.5;
+        musicGain.gain.value = 1.0;   // was 0.5 — too quiet to hear
         musicGain.connect(audioCtx.destination);
       }
       if(musTimer) return;
@@ -1053,68 +1055,86 @@
       });
 
     // --- Mini waterfall (top-right corner) ---
-    // A rock ledge with water flowing over it, like a river waterfall.
-    // The rocks are always there; the water only flows in 'water' mode
-    // (the wave setting). The ripples it makes are gentle and never
-    // scare the turtles (see the scare check — source 'waterfall').
+    // A stack of natural rocks in the corner, with water pouring over
+    // them and flowing DIAGONALLY down-left into the lagoon, like a
+    // river waterfall coming straight out of the corner. The water
+    // stretches across the whole rock formation. The rocks are always
+    // there; the water only flows in 'water' mode (the wave setting).
+    // The ripples it makes are gentle and never scare the turtles
+    // (see the scare check — source 'waterfall').
     let lastFallWave = 0;
     function drawWaterfall(ctx, time, width, height){
       const sc = Math.max(0.6, Math.min(1, width / 900));   // shrink on narrow screens
-      const fallX = width - 200 * sc;                       // left of the buttons
-      const lipY = 58;                                       // where water pours over
-      const baseY = 208;                                     // where it hits the lagoon
-      // Rocks: boulders forming the ledge along the top edge.
+      const fallX = width - 220 * sc;                       // left of the buttons
+      // Rocks: stacked in tiers like a natural cairn — each upper rock
+      // sits in the gap between the two below it, with varied shades
+      // and slight tilts so they read as separate stones, not one blob.
       const rocks = [
-        {x: -120, y: 18, rx: 78, ry: 34},
-        {x: -40,  y: 6,  rx: 66, ry: 30},
-        {x:  42,  y: 16, rx: 72, ry: 32},
-        {x:  118, y: 8,  rx: 58, ry: 26}
+        {x: -26, y: 28, rx: 44, ry: 24, rot: 0.03, c: '#64707d'},   // top
+        {x: -75, y: 58, rx: 52, ry: 26, rot: 0.07, c: '#5b6470'},   // middle
+        {x:  22, y: 55, rx: 56, ry: 27, rot: -0.06, c: '#6b7280'},  // middle
+        {x: -125, y: 88, rx: 60, ry: 30, rot: -0.08, c: '#6b7280'}, // base
+        {x: -25, y: 92, rx: 66, ry: 32, rot: 0.05, c: '#5b6470'},   // base
+        {x:  70, y: 86, rx: 55, ry: 28, rot: -0.04, c: '#64707d'}   // base
       ];
       ctx.save();
       rocks.forEach(r => {
+        ctx.save();
+        ctx.translate(fallX + r.x * sc, r.y);
+        ctx.rotate(r.rot);
         ctx.beginPath();
-        ctx.ellipse(fallX + r.x * sc, r.y, r.rx * sc, r.ry * sc, 0, 0, Math.PI * 2);
-        ctx.fillStyle = '#5b6470';
+        ctx.ellipse(0, 0, r.rx * sc, r.ry * sc, 0, 0, Math.PI * 2);
+        ctx.fillStyle = r.c;
         ctx.fill();
         ctx.lineWidth = 3;
-        ctx.strokeStyle = 'rgba(20, 30, 40, 0.6)';
+        ctx.strokeStyle = 'rgba(20, 30, 40, 0.65)';
         ctx.stroke();
+        // light catching the top of each stone
         ctx.beginPath();
-        ctx.ellipse(fallX + r.x * sc, r.y - r.ry * sc * 0.45, r.rx * sc * 0.7, r.ry * sc * 0.35, 0, Math.PI, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.ellipse(0, -r.ry * sc * 0.45, r.rx * sc * 0.7, r.ry * sc * 0.32, 0, Math.PI, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.16)';
         ctx.fill();
+        ctx.restore();
       });
       // Falling water (only in water mode — the wave setting)
       if(mode === 'water'){
-        const hw = 30 * sc;   // half-width of the falling sheet
+        const lipY = 60;    // where the water pours over the rocks
+        const baseY = 235;  // where it hits the lagoon
+        const topL = fallX - 160 * sc, topR = fallX + 110 * sc;  // spans all the rocks
+        const shift = 120 * sc;  // how far left the base sits (the diagonal)
+        const fallH = baseY - lipY;
         ctx.save();
+        // wide diagonal sheet, leaning left as it falls
         ctx.beginPath();
-        ctx.moveTo(fallX - hw, lipY);
-        ctx.lineTo(fallX + hw, lipY);
-        ctx.lineTo(fallX + hw + 4 * sc, baseY);
-        ctx.lineTo(fallX - hw - 4 * sc, baseY);
+        ctx.moveTo(topL, lipY);
+        ctx.lineTo(topR, lipY);
+        ctx.lineTo(topR - shift, baseY);
+        ctx.lineTo(topL - shift, baseY);
         ctx.closePath();
         const wg = ctx.createLinearGradient(0, lipY, 0, baseY);
-        wg.addColorStop(0, 'rgba(190, 235, 255, 0.75)');
+        wg.addColorStop(0, 'rgba(190, 235, 255, 0.7)');
         wg.addColorStop(1, 'rgba(190, 235, 255, 0.25)');
         ctx.fillStyle = wg;
         ctx.fill();
         ctx.clip();
-        // animated streaks running down the sheet
+        // animated streaks running diagonally down the sheet
         ctx.strokeStyle = 'rgba(255,255,255,0.55)';
         ctx.lineWidth = 2;
-        for(let i = 0; i < 4; i++){
-          const sx = fallX - hw * 0.66 + i * hw * 0.44;
-          const off = (time * 0.12 + i * 40) % (baseY - lipY);
+        for(let i = 0; i < 6; i++){
+          const startX = topL + ((i * 47 + 20) % (topR - topL));
+          const off = (time * 0.12 + i * 38) % fallH;
+          const sx = startX - off * (shift / fallH);
+          const sy = lipY + off;
           ctx.beginPath();
-          ctx.moveTo(sx, lipY + off);
-          ctx.lineTo(sx, lipY + off + 26);
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx - 26 * (shift / fallH), sy + 26);
           ctx.stroke();
         }
         ctx.restore();
-        // foam at the base
-        for(let i = 0; i < 5; i++){
-          const fx = fallX - 26 * sc + i * 13 * sc;
+        // foam along the base
+        const baseCx = (topL + topR) / 2 - shift;  // centre of the base edge
+        for(let i = 0; i < 6; i++){
+          const fx = (topL - shift) + 18 * sc + i * ((topR - topL - 36 * sc) / 5);
           const fr = 5 + Math.sin(time * 0.006 + i * 1.7) * 2;
           ctx.beginPath();
           ctx.arc(fx, baseY + 4, Math.max(2, fr), 0, Math.PI * 2);
@@ -1123,7 +1143,7 @@
         }
         // a gentle ripple every ~1.4s
         if(time - lastFallWave > 1400){
-          gameState.waves.push({ x: fallX + (Math.random() - 0.5) * 30, y: baseY + 6, age: 0, life: 130, speed: 1.1, source: 'waterfall' });
+          gameState.waves.push({ x: baseCx + (Math.random() - 0.5) * 60, y: baseY + 6, age: 0, life: 130, speed: 1.1, source: 'waterfall' });
           lastFallWave = time;
         }
       }
