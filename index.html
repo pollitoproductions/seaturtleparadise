@@ -308,7 +308,7 @@
           mbeat(MUS_CHORDS[bar][0] - 12, musNextTime);
         }
         var m = MUS_MELODY[s];
-        if(m) mnote(m, MUS_STEP * 4, "triangle", 0.22, musNextTime);   // melody, bright and clear
+        if(m) mnote(m, MUS_STEP * 6, "sine", 0.20, musNextTime);   // melody, soft music-box tone that rings gently (not a flute)
         musStep++;
         musNextTime += MUS_STEP;
       }
@@ -1031,10 +1031,10 @@
       ctx.restore();
     }
 
-    // Baby whale shark, top-down, facing +x in local space. Long
-    // straight-sided body (like a rounded rectangle), wide flat head,
-    // white spots and pale stripes on a grey-blue back, big round
-    // pectoral fins, and a tail that sways as it swims.
+    // Baby whale shark, top-down, facing +x in local space. Torpedo
+    // body with sharp, straight edges and a square (flat) head, white
+    // spots and pale stripes on a grey-blue back, big round pectoral
+    // fins, and a tail that sways as it swims.
     const WHALE_SPOTS = (() => {
       // deterministic spots so they don't flicker between frames
       let seed = 1234567;
@@ -1082,22 +1082,21 @@
         ctx.fillStyle = '#42536a';
         ctx.fill();
       });
-      // body: long and straight-sided, like a rounded rectangle — wide
-      // for most of its length with a round head, only narrowing near
-      // the tail (the long straight body in the sketch, not a torpedo)
+      // body: back to the torpedo shape, but with sharper, straighter
+      // edges and a square (flat) head instead of a rounded point
       const grad = ctx.createLinearGradient(0, -72, 0, 72);
       grad.addColorStop(0, '#5a6a7a');
       grad.addColorStop(0.5, '#42536a');
       grad.addColorStop(1, '#2e3a46');
       ctx.beginPath();
-      ctx.moveTo(210, 0);
-      ctx.bezierCurveTo(205, -55, 170, -68, 120, -68);
-      ctx.lineTo(-120, -68);
-      ctx.bezierCurveTo(-160, -68, -175, -55, -178, -30);
-      ctx.lineTo(-178, 30);
-      ctx.bezierCurveTo(-175, 55, -160, 68, -120, 68);
-      ctx.lineTo(120, 68);
-      ctx.bezierCurveTo(170, 68, 205, 55, 210, 0);
+      ctx.moveTo(200, -48);
+      ctx.lineTo(200, 48);
+      ctx.lineTo(110, 70);
+      ctx.lineTo(-60, 70);
+      ctx.lineTo(-168, 18);
+      ctx.lineTo(-168, -18);
+      ctx.lineTo(-60, -70);
+      ctx.lineTo(110, -70);
       ctx.closePath();
       ctx.fillStyle = grad;
       ctx.fill();
