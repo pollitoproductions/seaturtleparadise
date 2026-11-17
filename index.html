@@ -72,7 +72,7 @@
   </div>
 
   <!-- Collection menu button (top-left) — tap to see what you've collected -->
-  <button id="menuBtn" class="absolute top-8 left-8 z-20 w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md bg-slate-900/50 border border-slate-600 text-white text-2xl shadow-lg" title="My Collection" aria-label="My Collection">🎒</button>
+  <button id="menuBtn" class="absolute top-8 left-8 z-20 w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md bg-slate-900/50 border border-slate-600 text-white text-2xl shadow-lg" title="My Collection" aria-label="My Collection">🐢</button>
   <!-- Collection menu panel (hidden until you tap the button) -->
   <div id="menuPanel" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 hidden w-72 max-w-[85vw] rounded-2xl backdrop-blur-md bg-slate-900/80 border border-slate-600 text-white p-5 shadow-2xl">
     <div class="flex items-center justify-between mb-3">
@@ -349,7 +349,7 @@
           mbeat(MUS_CHORDS[bar][0] - 12, musNextTime);
         }
         var m = MUS_MELODY[s];
-        if(m) mpiano(m, MUS_STEP * 6, 0.15, musNextTime);   // melody, soft piano
+        if(m) mpiano(m, MUS_STEP * 6, 0.12, musNextTime);   // melody, soft piano
         musStep++;
         musNextTime += MUS_STEP;
       }
