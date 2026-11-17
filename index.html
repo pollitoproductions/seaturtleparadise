@@ -292,6 +292,30 @@
         o.start(t); o.stop(t + 0.55);
       }catch(e){}
     }
+    // Soft piano for the melody — a triangle note with a fast hammer
+    // attack plus a soft octave above, both decaying like a piano
+    // string (not a flute's slow swell, not a music box's pure sine).
+    function mpiano(midi, dur, vol, when){
+      if(!musicGain) return;
+      try{
+        var t = when || audioCtx.currentTime;
+        var f = midiToFreq(midi);
+        var o1 = audioCtx.createOscillator(), g1 = audioCtx.createGain();
+        o1.type = "triangle"; o1.frequency.setValueAtTime(f, t);
+        g1.gain.setValueAtTime(0.0001, t);
+        g1.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+        g1.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        o1.connect(g1); g1.connect(musicGain);
+        o1.start(t); o1.stop(t + dur + 0.05);
+        var o2 = audioCtx.createOscillator(), g2 = audioCtx.createGain();
+        o2.type = "sine"; o2.frequency.setValueAtTime(f * 2, t);
+        g2.gain.setValueAtTime(0.0001, t);
+        g2.gain.exponentialRampToValueAtTime(vol * 0.3, t + 0.01);
+        g2.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.6);
+        o2.connect(g2); g2.connect(musicGain);
+        o2.start(t); o2.stop(t + dur * 0.6 + 0.05);
+      }catch(e){}
+    }
     function musicScheduler(){
       if(!musicGain) return;
       while(musNextTime < audioCtx.currentTime + 0.15){
@@ -308,7 +332,7 @@
           mbeat(MUS_CHORDS[bar][0] - 12, musNextTime);
         }
         var m = MUS_MELODY[s];
-        if(m) mnote(m, MUS_STEP * 6, "sine", 0.20, musNextTime);   // melody, soft music-box tone that rings gently (not a flute)
+        if(m) mpiano(m, MUS_STEP * 6, 0.20, musNextTime);   // melody, soft piano
         musStep++;
         musNextTime += MUS_STEP;
       }
@@ -386,6 +410,13 @@
 
     waterBtn.addEventListener('click', () => { mode = 'water'; updateUI(); });
     foodBtn.addEventListener('click', () => { mode = 'food'; updateUI(); });
+    // Double-tap the food button to switch the food yourself: cucumber
+    // <-> seaweed. It stays on your pick until you double-tap it again.
+    foodBtn.addEventListener('dblclick', () => {
+      const cur = foodManual || (visitors.length > 0 ? 'seaweed' : 'cucumber');
+      foodManual = cur === 'cucumber' ? 'seaweed' : 'cucumber';
+      updateFoodButton();
+    });
 
     // --- Setup & Sizing ---
 
@@ -825,6 +856,20 @@
     let firstVisitDone = false;   // the very first visitor is always a whale shark
     let foodKind = 'cucumber';   // 'cucumber' normally, 'seaweed' while a visitor is here
     let foodBtnKind = 'cucumber'; // what the food button currently shows
+    let foodManual = null;       // set by double-tapping the food button: 'cucumber' or 'seaweed' (null = automatic)
+
+    // --- Glowing jellyfish (night only) ---
+    // They drift up through the lagoon at night, each a different
+    // colour, gently pulsing. Tap one and it lights up brightly.
+    const JELLY_COLORS = [
+      { color: '#ff7eb6', light: '#ffb3d1' },  // pink
+      { color: '#b388ff', light: '#d1b3ff' },  // purple
+      { color: '#4fc3f7', light: '#a5e1ff' },  // blue
+      { color: '#4dd0e1', light: '#a5ecf5' },  // cyan
+      { color: '#81c784', light: '#c8e6c9' },  // green
+      { color: '#ffb74d', light: '#ffe0b2' }   // orange
+    ];
+    const jellyfish = [];
 
     // The food button's two icons (cucumber slice / seaweed sprig).
     const CUCUMBER_SVG = `<svg viewBox="0 0 24 24" fill="none" class="w-8 h-8"><circle cx="12" cy="12" r="10" fill="#134d24" stroke="#0a2e12" stroke-width="0.5"/><circle cx="12" cy="12" r="8.5" fill="#7dce94" /><circle cx="12" cy="12" r="7" fill="#e2f5e6" /><path d="M12 12 Q 15 8 16 12 Q 15 16 12 12" fill="#b6e3c4" transform="rotate(0 12 12)"/><path d="M12 12 Q 15 8 16 12 Q 15 16 12 12" fill="#b6e3c4" transform="rotate(120 12 12)"/><path d="M12 12 Q 15 8 16 12 Q 15 16 12 12" fill="#b6e3c4" transform="rotate(240 12 12)"/><ellipse cx="14" cy="11.5" rx="0.8" ry="0.4" fill="#fff" transform="rotate(30 14 11.5)"/><ellipse cx="14" cy="12.5" rx="0.8" ry="0.4" fill="#fff" transform="rotate(-30 14 12.5)"/><ellipse cx="10" cy="10" rx="0.8" ry="0.4" fill="#fff" transform="rotate(150 10 10)"/><ellipse cx="11" cy="9" rx="0.8" ry="0.4" fill="#fff" transform="rotate(90 11 9)"/><ellipse cx="10" cy="14" rx="0.8" ry="0.4" fill="#fff" transform="rotate(210 10 14)"/><ellipse cx="11" cy="15" rx="0.8" ry="0.4" fill="#fff" transform="rotate(270 11 15)"/></svg>`;
@@ -832,9 +877,12 @@
 
     // While a visitor is here the food button turns into seaweed (to feed
     // them); when they leave it turns back into cucumber (for the turtles).
-    // Any uneaten seaweed drifts away when the visitors leave.
+    // Any uneaten seaweed turns back into cucumbers when the food is
+    // cucumber again. Double-tapping the food button picks the food
+    // yourself (foodManual) and overrides the automatic switch until
+    // you double-tap it again.
     function updateFoodButton(){
-      const want = visitors.length > 0 ? 'seaweed' : 'cucumber';
+      const want = foodManual || (visitors.length > 0 ? 'seaweed' : 'cucumber');
       if (want === foodBtnKind) return;
       foodBtnKind = want;
       foodKind = want;
@@ -859,7 +907,7 @@
       const base = {
         stingray:     { speed: 0.55, scale: 0.9 },
         babyStingray: { speed: 0.50, scale: 0.5 },
-        whaleShark:   { speed: 0.42, scale: 1.0 }
+        whaleShark:   { speed: 0.50, scale: 1.0 }
       }[kind];
       const v = {
         kind, x, y, dir,
@@ -927,7 +975,7 @@
         }
         if (target) {
           v.targetAngle = Math.atan2(target.f.y - v.y, target.f.x - v.x);
-          if (target.d < 55 * v.scale) gameState.food.splice(target.idx, 1);
+          if (target.d < 70 * v.scale) gameState.food.splice(target.idx, 1);
         } else {
           v.targetAngle = v.dir === 1 ? 0 : Math.PI;
         }
@@ -937,6 +985,18 @@
         v.angle += diff * 0.03 * dt;
         v.x += Math.cos(v.angle) * v.speed * dt;
         v.y += Math.sin(v.angle) * v.speed * dt;
+        // Rocks are solid: if a visitor is about to swim under the
+        // rock bank, push it down below the rocks. It can swim under
+        // the waterfall water, but not behind the stones. We check the
+        // head (the front of the animal) so the push happens just as
+        // it reaches the rocks, and the margin clears its body height.
+        const rb = rockBounds(width);
+        const headX = v.x + Math.cos(v.angle) * 190 * v.scale;
+        const headY = v.y + Math.sin(v.angle) * 190 * v.scale;
+        const bodyR = 110 * v.scale + 15;
+        if (headX > rb.x0 && headX < rb.x1 && headY > rb.y0 && headY < rb.y1 + bodyR) {
+          v.y = rb.y1 + bodyR;
+        }
         // keep it in the water vertically; if it drifts to an edge, turn it back
         if (v.y < 50 || v.y > height - 50) {
           v.y = Math.max(50, Math.min(height - 50, v.y));
@@ -953,6 +1013,69 @@
         nextVisitorAt = time + 60000 + Math.random() * 60000;
       }
       updateFoodButton();
+    }
+
+    // Glowing jellyfish — night only. They drift slowly upward through
+    // the lagoon, each a different colour, gently pulsing. Tap one and
+    // it flares bright for a moment. They fade out when day comes.
+    function updateJellyfish(time, dt, width, height){
+      const isNight = theme === 'night';
+      if (isNight && jellyfish.length < 4 && Math.random() < 0.02 * dt) {
+        const c = JELLY_COLORS[Math.floor(Math.random() * JELLY_COLORS.length)];
+        jellyfish.push({
+          x: 60 + Math.random() * (width - 120),
+          y: height + 40,
+          size: 22 + Math.random() * 18,
+          color: c.color, light: c.light,
+          phase: Math.random() * 1000,
+          lit: 0, alpha: 0,
+          drift: 0.15 + Math.random() * 0.2
+        });
+      }
+      for (let i = jellyfish.length - 1; i >= 0; i--) {
+        const j = jellyfish[i];
+        j.alpha += (isNight ? 0.02 : -0.02) * dt;
+        if (j.alpha <= 0 && !isNight) { jellyfish.splice(i, 1); continue; }
+        j.alpha = Math.max(0, Math.min(1, j.alpha));
+        j.y -= j.drift * dt;
+        j.x += Math.sin(time * 0.0008 + j.phase) * 0.3 * dt;
+        if (j.lit > 0) j.lit = Math.max(0, j.lit - 0.01 * dt);
+        if (j.y < -60) { j.y = height + 40; j.x = 60 + Math.random() * (width - 120); }
+      }
+    }
+    function drawJellyfish(ctx, time, j){
+      const t = time + j.phase;
+      const pulse = 0.5 + 0.5 * Math.sin(t * 0.002);
+      const glow = 0.35 + 0.45 * pulse + j.lit * 0.6;
+      const r = j.size;
+      ctx.save();
+      ctx.translate(j.x, j.y);
+      ctx.globalAlpha = j.alpha;
+      ctx.shadowColor = j.color;
+      ctx.shadowBlur = 25 * glow + 10;
+      // bell: a glowing dome
+      const grad = ctx.createRadialGradient(0, -r * 0.3, r * 0.1, 0, 0, r);
+      grad.addColorStop(0, j.light);
+      grad.addColorStop(0.7, j.color);
+      grad.addColorStop(1, j.color);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // tentacles: wavy lines hanging below the bell
+      ctx.strokeStyle = j.color;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      for (let k = -2; k <= 2; k++) {
+        const sway = Math.sin(t * 0.003 + k) * r * 0.15;
+        ctx.beginPath();
+        ctx.moveTo(k * r * 0.35, r * 0.2);
+        ctx.quadraticCurveTo(k * r * 0.35 + sway, r * 0.8, k * r * 0.35 + sway * 1.5, r * 1.5);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     // Seaweed sprig (what the visitors eat) — a few wavy green blades.
@@ -983,7 +1106,7 @@
 
     // Stingray, top-down, facing +x in local space (the caller rotates it
     // to the travel direction). The baby stingray uses the same drawing
-    // at a smaller scale. Grey-brown diamond body, long whip tail.
+    // at a smaller scale. Blue-grey diamond body, long whip tail.
     function drawStingray(ctx, time, v){
       const t = time + v.timeOffset;
       const flap = Math.sin(t * 0.004 + v.phase) * 5;
@@ -994,7 +1117,7 @@
       ctx.rotate(v.angle + wobble);
       ctx.scale(sc, sc);
       // tail first (so the body overlaps its base) — a thin whip that sways
-      ctx.strokeStyle = '#6b6257';
+      ctx.strokeStyle = '#6b7f92';
       ctx.lineCap = 'round';
       for (let i = 0; i < 6; i++) {
         const x0 = -85 - i * 18;
@@ -1009,9 +1132,9 @@
       }
       // body: a diamond with curved wings
       const grad = ctx.createRadialGradient(0, 0, 10, 0, 0, 120);
-      grad.addColorStop(0, '#8a7f72');
-      grad.addColorStop(0.7, '#6b6257');
-      grad.addColorStop(1, '#544d42');
+      grad.addColorStop(0, '#8fa3b5');
+      grad.addColorStop(0.7, '#6b7f92');
+      grad.addColorStop(1, '#4a5a6b');
       ctx.beginPath();
       ctx.moveTo(95, 0);
       ctx.bezierCurveTo(70, -55, 45, -95, 5, -108 + flap);
@@ -1029,6 +1152,27 @@
       ctx.beginPath(); ctx.arc(58, -13, 3, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(58, 13, 3, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
+    }
+
+    // Draw a polygon whose corners are rounded just a little (radius r),
+    // so a sharp-edged shape gets soft corners without changing its outline.
+    function roundedPoly(ctx, pts, r){
+      ctx.beginPath();
+      const n = pts.length;
+      for(let i = 0; i < n; i++){
+        const p = pts[i];
+        const prev = pts[(i - 1 + n) % n];
+        const next = pts[(i + 1) % n];
+        const v1x = p[0] - prev[0], v1y = p[1] - prev[1];
+        const v2x = next[0] - p[0], v2y = next[1] - p[1];
+        const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
+        const a1x = p[0] - v1x / l1 * r, a1y = p[1] - v1y / l1 * r;
+        const a2x = p[0] + v2x / l2 * r, a2y = p[1] + v2y / l2 * r;
+        if(i === 0) ctx.moveTo(a1x, a1y);
+        else ctx.lineTo(a1x, a1y);
+        ctx.quadraticCurveTo(p[0], p[1], a2x, a2y);
+      }
+      ctx.closePath();
     }
 
     // Baby whale shark, top-down, facing +x in local space. Torpedo
@@ -1083,21 +1227,14 @@
         ctx.fill();
       });
       // body: back to the torpedo shape, but with sharper, straighter
-      // edges and a square (flat) head instead of a rounded point
+      // edges and a square (flat) head instead of a rounded point.
+      // The corners are rounded just a tiny bit (radius 10) so the
+      // edges feel soft, not pointy.
       const grad = ctx.createLinearGradient(0, -72, 0, 72);
       grad.addColorStop(0, '#5a6a7a');
       grad.addColorStop(0.5, '#42536a');
       grad.addColorStop(1, '#2e3a46');
-      ctx.beginPath();
-      ctx.moveTo(200, -48);
-      ctx.lineTo(200, 48);
-      ctx.lineTo(110, 70);
-      ctx.lineTo(-60, 70);
-      ctx.lineTo(-168, 18);
-      ctx.lineTo(-168, -18);
-      ctx.lineTo(-60, -70);
-      ctx.lineTo(110, -70);
-      ctx.closePath();
+      roundedPoly(ctx, [[200,-48],[200,48],[110,70],[-60,70],[-168,18],[-168,-18],[-60,-70],[110,-70]], 10);
       ctx.fillStyle = grad;
       ctx.fill();
       ctx.lineWidth = 2;
@@ -1543,6 +1680,9 @@
         if (v.kind === 'whaleShark') drawWhaleShark(ctx, time, v);
         else drawStingray(ctx, time, v);
       });
+      // 5.6 Glowing jellyfish (night only, all different colours)
+      updateJellyfish(time, dt, width, height);
+      jellyfish.forEach(j => drawJellyfish(ctx, time, j));
       // tiny splashes (baby whale shark entering / leaving)
       for (let i = splashes.length - 1; i >= 0; i--) {
         const sp = splashes[i];
@@ -1583,6 +1723,12 @@
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
+
+      // Tap a glowing jellyfish and it flares bright (no food / wave).
+      for (let i = jellyfish.length - 1; i >= 0; i--) {
+        const j = jellyfish[i];
+        if (Math.hypot(x - j.x, y - j.y) < j.size + 24) { j.lit = 1; return; }
+      }
 
       gameState.pointerActive = true;
       gameState.lastX = x;
