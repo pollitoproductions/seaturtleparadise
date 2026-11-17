@@ -1343,17 +1343,21 @@
     function updateJellyfish(time, dt, width, height){
       const isNight = theme === 'night';
       // at night they're already there, spread through the lagoon
-      // (not drifting in from the bottom) — fill up fast when night starts
-      if (isNight && jellyfish.length < 4 && Math.random() < 0.08 * dt) {
+      // (not drifting in from the bottom) — fill up fast when night starts.
+      // Some of them are babies: smaller, and they drift and pulse a
+      // little faster, like little baby jellyfish following the big ones.
+      if (isNight && jellyfish.length < 6 && Math.random() < 0.08 * dt) {
         const c = JELLY_COLORS[Math.floor(Math.random() * JELLY_COLORS.length)];
+        const isBaby = Math.random() < 0.45;
         jellyfish.push({
           x: 60 + Math.random() * (width - 120),
           y: 80 + Math.random() * (height - 160),
-          size: 22 + Math.random() * 18,
+          size: isBaby ? 12 + Math.random() * 6 : 22 + Math.random() * 18,
           color: c.color, light: c.light,
           phase: Math.random() * 1000,
           lit: 0, alpha: 0,
-          drift: 0.15 + Math.random() * 0.2
+          drift: isBaby ? 0.25 + Math.random() * 0.25 : 0.15 + Math.random() * 0.2,
+          baby: isBaby
         });
       }
       for (let i = jellyfish.length - 1; i >= 0; i--) {
@@ -1369,11 +1373,13 @@
     }
     function drawJellyfish(ctx, time, j){
       const t = time + j.phase;
-      const pulse = 0.5 + 0.5 * Math.sin(t * 0.002);
+      // babies pulse a little faster than the big ones
+      const pr = j.baby ? 0.0032 : 0.002;
+      const pulse = 0.5 + 0.5 * Math.sin(t * pr);
       const glow = 0.35 + 0.45 * pulse + j.lit * 0.6;
       const r = j.size;
       // the bell gently pulses (squeezes in and out) as it swims
-      const squeeze = 1 + Math.sin(t * 0.002) * 0.08;
+      const squeeze = 1 + Math.sin(t * pr) * 0.08;
       ctx.save();
       ctx.translate(j.x, j.y);
       ctx.globalAlpha = j.alpha;
