@@ -517,13 +517,14 @@
       const spd = t.isBaby ? (1.2 + Math.random() * 0.8) * t.scaleMult : (0.4 + Math.random() * 0.5) * t.scaleMult;
       return {
         ...t,
-        // Tamagotchi: every turtle starts as a baby (a little smaller
-        // than its full size) with empty hearts. Feed it and pet it to
-        // fill its hearts; when they're full it grows to its full size.
+        // Tamagotchi: every turtle starts as a little baby (half its
+        // full size) with empty hearts. Feed it and pet it to fill its
+        // hearts; when they're full it grows to its full size.
         adultScale: t.scaleMult,
-        scaleMult: t.scaleMult * 0.6,
+        scaleMult: t.scaleMult * 0.5,
         hearts: 0,
         grown: false,
+        heartShow: 0,
         // at night, every other turtle swims away to sleep, so the
         // jellyfish have room (only in nighttime mode)
         nightSleeper: i % 2 === 1,
@@ -880,7 +881,10 @@
     // Tamagotchi care: feed or pet a turtle to fill its hearts. When
     // its hearts are full it grows up to its full size (and celebrates
     // with a happy spin). Already-grown turtles just stay grown.
+    // The hearts meter only shows for a few seconds after you care for
+    // it — it's hidden the rest of the time.
     function careFor(t, amount){
+      t.heartShow = 240;
       if (t.grown) return;
       t.hearts = Math.min(100, (t.hearts || 0) + amount);
       if (t.hearts >= 100) {
@@ -924,17 +928,21 @@
       }
 
       // Tamagotchi hearts meter: a tiny bar above a baby turtle showing
-      // how full its hearts are (it grows up when the bar is full)
-      if (!t.grown) {
-        const bw = 36, bh = 5, bx = t.x - bw / 2, by = t.y - 48;
+      // how full its hearts are. It's hidden until you feed or pet the
+      // turtle, then it pops up for a few seconds and fades away. It's
+      // kept small and soft so it doesn't stand out on its own.
+      if (!t.grown && t.heartShow > 0) {
+        const bw = 26, bh = 3, bx = t.x - bw / 2, by = t.y - 42;
+        const fade = Math.min(1, t.heartShow / 60) * 0.75;
         ctx.save();
-        ctx.fillStyle = 'rgba(0, 20, 20, 0.55)';
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = 'rgba(0, 20, 20, 0.45)';
         ctx.beginPath();
-        ctx.roundRect(bx, by, bw, bh, 2.5);
+        ctx.roundRect(bx, by, bw, bh, 1.5);
         ctx.fill();
         ctx.fillStyle = '#ff6b9d';
         ctx.beginPath();
-        ctx.roundRect(bx, by, Math.max(0, bw * ((t.hearts || 0) / 100)), bh, 2.5);
+        ctx.roundRect(bx, by, Math.max(0, bw * ((t.hearts || 0) / 100)), bh, 1.5);
         ctx.fill();
         ctx.restore();
       }
@@ -1223,46 +1231,46 @@
       ctx.translate(j.x, j.y);
       ctx.globalAlpha = j.alpha;
       ctx.shadowColor = j.color;
-      ctx.shadowBlur = 25 * glow + 10;
-      // bell: a round umbrella dome, wider than it is tall, with a
-      // soft rim — like a real jellyfish, not a half-circle
-      const grad = ctx.createRadialGradient(0, -r * 0.4, r * 0.1, 0, 0, r * 1.1);
+      ctx.shadowBlur = 30 * glow + 12;
+      // bell: a smooth glowing translucent dome, like a moon jellyfish
+      // — bright in the middle, fading to see-through at the rim
+      const grad = ctx.createRadialGradient(0, -r * 0.35, r * 0.05, 0, 0, r * 1.15);
       grad.addColorStop(0, j.light);
-      grad.addColorStop(0.6, j.color);
+      grad.addColorStop(0.45, j.color);
       grad.addColorStop(1, j.color);
+      ctx.globalAlpha = j.alpha * (0.55 + 0.3 * glow);
       ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.moveTo(-r, 0);
-      ctx.bezierCurveTo(-r, -r * 0.9 * squeeze, -r * 0.5, -r * 1.05 * squeeze, 0, -r * 1.05 * squeeze);
-      ctx.bezierCurveTo(r * 0.5, -r * 1.05 * squeeze, r, -r * 0.9 * squeeze, r, 0);
-      // a soft scalloped rim along the bottom edge of the bell
-      for (let k = 4; k >= -4; k--) {
-        ctx.quadraticCurveTo(k * r * 0.2, r * 0.18, (k - 0.5) * r * 0.2, 0);
-      }
+      ctx.arc(0, 0, r, Math.PI, 0);
       ctx.closePath();
       ctx.fill();
-      ctx.shadowBlur = 0;
-      // oral arms: short frilly ribbons in the middle, under the bell
+      // a bright glowing rim around the bell's edge
+      ctx.globalAlpha = j.alpha;
       ctx.strokeStyle = j.light;
-      ctx.lineWidth = 3;
-      ctx.lineCap = 'round';
-      for (let k = -1; k <= 1; k++) {
-        const sway = Math.sin(t * 0.004 + k * 1.3) * r * 0.12;
-        ctx.beginPath();
-        ctx.moveTo(k * r * 0.2, r * 0.1);
-        ctx.quadraticCurveTo(k * r * 0.2 + sway, r * 0.55, k * r * 0.2 + sway * 1.4, r * 0.9);
-        ctx.stroke();
-      }
-      // tentacles: long, thin, flowing threads hanging from the rim
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, Math.PI, 0);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      // a soft glowing core inside the bell
+      ctx.globalAlpha = j.alpha * (0.5 + 0.4 * pulse);
+      ctx.fillStyle = j.light;
+      ctx.beginPath();
+      ctx.ellipse(0, -r * 0.35, r * 0.35, r * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = j.alpha;
+      // tentacles: many long, thin, flowing threads hanging from the
+      // rim, waving gently — like the glowing jellyfish in the photos
       ctx.strokeStyle = j.color;
-      ctx.lineWidth = 1.5;
-      for (let k = -4; k <= 4; k++) {
-        if (k === 0) continue;
-        const sway = Math.sin(t * 0.003 + k * 0.8) * r * 0.2;
-        const sway2 = Math.sin(t * 0.002 + k * 1.7) * r * 0.25;
+      ctx.lineWidth = 1.2;
+      ctx.lineCap = 'round';
+      for (let k = -6; k <= 6; k++) {
+        const sway = Math.sin(t * 0.003 + k * 0.8) * r * 0.22;
+        const sway2 = Math.sin(t * 0.002 + k * 1.7) * r * 0.3;
+        const len = r * (2.0 + (Math.abs(k) % 3) * 0.35);
         ctx.beginPath();
-        ctx.moveTo(k * r * 0.2, r * 0.05);
-        ctx.bezierCurveTo(k * r * 0.2 + sway, r * 0.7, k * r * 0.2 + sway2, r * 1.3, k * r * 0.2 + sway2 * 1.3, r * 1.9);
+        ctx.moveTo(k * r * 0.14, r * 0.05);
+        ctx.bezierCurveTo(k * r * 0.14 + sway, r * 0.8, k * r * 0.14 + sway2, r * 1.4, k * r * 0.14 + sway2 * 1.3, len);
         ctx.stroke();
       }
       ctx.restore();
@@ -1466,8 +1474,8 @@
       // 1. Background
       const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
       if (theme === 'night') {
-        bgGrad.addColorStop(0, '#023838'); 
-        bgGrad.addColorStop(1, '#000f0f'); 
+        bgGrad.addColorStop(0, '#012a2a');
+        bgGrad.addColorStop(1, '#000a0a');
       } else {
         bgGrad.addColorStop(0, '#008b8b'); 
         bgGrad.addColorStop(1, '#003333'); 
@@ -1668,10 +1676,10 @@
                gameState.food.splice(nearestFood.index, 1);
                // happy turtle! It spins with joy and hearts float up
                // for a few seconds after eating. Feeding fills its
-               // Tamagotchi hearts too.
+               // Tamagotchi hearts a little bit too.
                t.happy = 180;
                t.happySpin = 0;
-               careFor(t, 25);
+               careFor(t, 15);
             }
           }
         }
@@ -1748,6 +1756,8 @@
         // Happy spin: after eating, the turtle spins with joy for a
         // few seconds (t.happy counts down from 180 frames).
         if (t.happy > 0) { t.happy -= dt; t.happySpin = (t.happySpin || 0) + dt * 0.04; }
+        // the hearts meter fades away a few seconds after you care for it
+        if (t.heartShow > 0) t.heartShow -= dt;
 
         drawRealisticTurtle(ctx, time, width, height, t);
       });
@@ -1958,7 +1968,7 @@
         if (Math.hypot(x - t.x, y - t.y) < tapR) {
           t.happy = 120;
           t.happySpin = 0;
-          careFor(t, 15);
+          careFor(t, 10);
           return;
         }
       }
