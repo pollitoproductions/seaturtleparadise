@@ -84,9 +84,18 @@
     <div class="border-t border-slate-600 pt-3">
       <div class="text-sm text-slate-300 mb-1">Animals</div>
       <div class="text-sm">🐢 Turtles — take care of them and they'll grow!</div>
-      <div class="text-sm text-slate-400">New animals will appear here when you unlock them.</div>
+      <div id="petList" class="text-sm"></div>
+      <div id="petHint" class="text-sm text-slate-400">New animals will appear here when you unlock them.</div>
+    </div>
+    <div id="unlockSection" class="hidden border-t border-amber-400/60 pt-3 mt-3">
+      <div class="text-base font-bold text-amber-300 mb-1">🎉 You unlocked a new animal!</div>
+      <div class="text-sm text-slate-300 mb-2">There's a mystery shell waiting. Tap it twice to open it!</div>
+      <button id="mysteryShell" class="w-20 h-20 rounded-full bg-slate-700/70 text-5xl flex items-center justify-center mx-auto my-2">🐚</button>
+      <div id="unlockReveal" class="hidden text-center text-base font-bold text-emerald-300"></div>
     </div>
   </div>
+
+  <div id="unlockToast" class="absolute top-24 left-1/2 -translate-x-1/2 z-30 hidden rounded-full backdrop-blur-md bg-amber-400/95 text-slate-900 font-bold px-5 py-3 shadow-2xl text-base cursor-pointer whitespace-nowrap">🎉 You unlocked a new animal! Tap here to open your menu! 🐚</div>
 
   <canvas id="oceanCanvas"></canvas>
 
@@ -443,16 +452,49 @@
     const menuClose = document.getElementById('menuClose');
     menuBtn.addEventListener('click', () => {
       updateTreasureCount();
+      updateMenuUnlock();
       menuPanel.classList.toggle('hidden');
     });
     menuClose.addEventListener('click', () => menuPanel.classList.add('hidden'));
+
+    // Tap the unlock notification to jump straight to your menu.
+    const unlockToast = document.getElementById('unlockToast');
+    unlockToast.addEventListener('click', () => {
+      unlockToast.classList.add('hidden');
+      updateTreasureCount();
+      updateMenuUnlock();
+      menuPanel.classList.remove('hidden');
+    });
+
+    // The mystery shell: tap it twice to crack it open and reveal your
+    // new animal — a seahorse, a baby otter, or a baby octopus, picked
+    // at random. Then it swims in your lagoon!
+    const mysteryShell = document.getElementById('mysteryShell');
+    const unlockReveal = document.getElementById('unlockReveal');
+    mysteryShell.addEventListener('dblclick', () => {
+      if (!unlockPending) return;
+      const kind = UNLOCK_KINDS[Math.floor(Math.random() * UNLOCK_KINDS.length)];
+      spawnPet(kind);
+      unlockPending = false;
+      unlocksClaimed++;
+      mysteryShell.textContent = UNLOCK_EMOJI[kind];
+      unlockReveal.textContent = `It's ${UNLOCK_NAME[kind]}! ${UNLOCK_EMOJI[kind]}`;
+      unlockReveal.classList.remove('hidden');
+      updateMenuUnlock();
+      saveGame();
+      setTimeout(() => {
+        mysteryShell.textContent = '🐚';
+        unlockReveal.classList.add('hidden');
+        updateMenuUnlock();
+      }, 5000);
+    });
 
     // --- Setup & Sizing ---
 
     // (Removed duplicate resizeCanvas event listener; now handled above)
 
     // --- Data Definitions ---
-    const numParticles = 150;
+    const numParticles = 90;
     const particles = Array.from({ length: numParticles }, () => ({
       x: Math.random() * window.innerWidth,
       y: Math.random() * window.innerHeight,
@@ -462,7 +504,7 @@
       alpha: Math.random() * 0.3 + 0.05
     }));
 
-    const numSparkles = 250;
+    const numSparkles = 140;
     const sparkles = Array.from({ length: numSparkles }, () => ({
       x: Math.random() * window.innerWidth,
       y: Math.random() * window.innerHeight,
@@ -808,7 +850,7 @@
       
       ctx.fillStyle = shellGrad;
       ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-      ctx.shadowBlur = 15;
+      ctx.shadowBlur = 8;
       ctx.fill();
       ctx.shadowBlur = 0;
 
@@ -984,6 +1026,71 @@
       const st = document.getElementById('menuStars');
       if (sh) sh.textContent = shellCount;
       if (st) st.textContent = starCount;
+    }
+
+    // --- Animal unlocks: collect 1,000 shells OR 1,000 starfish and a
+    // new animal is waiting for you! A little notification tells you to
+    // check your menu, and in the menu there's a mystery shell — tap it
+    // twice to crack it open and reveal your animal. Which animal you
+    // get is a surprise: a seahorse, a baby otter, or a baby octopus,
+    // picked at random. Your counts and animals are saved on your
+    // device, so your progress is still there when you come back.
+    const SAVE_KEY = 'seaTurtleParadise_save_v1';
+    const UNLOCK_KINDS = ['seahorse', 'otter', 'octopus'];
+    const UNLOCK_EMOJI = { seahorse: '🌊', otter: '🦦', octopus: '🐙' };
+    const UNLOCK_NAME = { seahorse: 'a seahorse', otter: 'a baby otter', octopus: 'a baby octopus' };
+    const UNLOCK_LABEL = { seahorse: '🌊 Seahorse', otter: '🦦 Baby otter', octopus: '🐙 Baby octopus' };
+    let unlocksEarned = 0, unlocksClaimed = 0, unlockPending = false;
+    const pets = [];
+    function saveGame(){
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify({
+          shellCount, starCount,
+          unlocksEarned, unlocksClaimed, unlockPending,
+          pets: pets.map(p => p.kind)
+        }));
+      } catch (e) {}
+    }
+    function loadGame(){
+      try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return;
+        const d = JSON.parse(raw);
+        if (typeof d.shellCount === 'number') shellCount = d.shellCount;
+        if (typeof d.starCount === 'number') starCount = d.starCount;
+        if (typeof d.unlocksEarned === 'number') unlocksEarned = d.unlocksEarned;
+        if (typeof d.unlocksClaimed === 'number') unlocksClaimed = d.unlocksClaimed;
+        if (typeof d.unlockPending === 'boolean') unlockPending = d.unlockPending;
+        if (Array.isArray(d.pets)) d.pets.forEach(k => { if (UNLOCK_KINDS.includes(k)) spawnPet(k); });
+      } catch (e) {}
+    }
+    function updateMenuUnlock(){
+      const sec = document.getElementById('unlockSection');
+      const list = document.getElementById('petList');
+      const hint = document.getElementById('petHint');
+      if (sec) sec.classList.toggle('hidden', !unlockPending);
+      if (list) {
+        list.innerHTML = pets.map(p => `<div>${UNLOCK_LABEL[p.kind] || p.kind}</div>`).join('');
+      }
+      if (hint) hint.classList.toggle('hidden', pets.length > 0);
+    }
+    let toastTimer = null;
+    function showUnlockToast(){
+      const t = document.getElementById('unlockToast');
+      if (!t) return;
+      t.classList.remove('hidden');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.add('hidden'), 12000);
+    }
+    function checkUnlock(){
+      const milestones = Math.floor(shellCount / 1000) + Math.floor(starCount / 1000);
+      if (milestones > unlocksEarned) {
+        unlocksEarned = milestones;
+        unlockPending = true;
+        showUnlockToast();
+        updateMenuUnlock();
+        saveGame();
+      }
     }
     function spawnCollectible(width, height){
       const kind = Math.random() < 0.5 ? 'shell' : 'starfish';
@@ -1231,8 +1338,17 @@
       ctx.save();
       ctx.translate(j.x, j.y);
       ctx.globalAlpha = j.alpha;
-      ctx.shadowColor = j.color;
-      ctx.shadowBlur = 30 * glow + 12;
+      // glow halo: a soft radial glow behind the bell. (This used to be
+      // a big shadowBlur, but that made the game lag on Chromebooks —
+      // a plain radial gradient looks the same and is much faster.)
+      const halo = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, r * 2.2);
+      halo.addColorStop(0, j.color);
+      halo.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = j.alpha * (0.25 + 0.35 * glow);
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 2.2, 0, Math.PI * 2);
+      ctx.fill();
       // bell: a smooth glowing translucent dome, like a moon jellyfish
       // — bright in the middle, fading to see-through at the rim
       const grad = ctx.createRadialGradient(0, -r * 0.35, r * 0.05, 0, 0, r * 1.15);
@@ -1252,7 +1368,6 @@
       ctx.beginPath();
       ctx.arc(0, 0, r, Math.PI, 0);
       ctx.stroke();
-      ctx.shadowBlur = 0;
       // a soft glowing core inside the bell
       ctx.globalAlpha = j.alpha * (0.5 + 0.4 * pulse);
       ctx.fillStyle = j.light;
@@ -1465,35 +1580,289 @@
       ctx.restore();
     }
 
+    // --- Unlocked pets: seahorse, baby otter, baby octopus ---
+    // Medium-sized friends that swim in your lagoon after you crack
+    // open the mystery shell. They wander gently, steer clear of the
+    // rocks, and you can tap one to pet it (it wiggles happily).
+    function spawnPet(kind){
+      const w = canvas.width, h = canvas.height;
+      const p = {
+        kind,
+        x: 100 + Math.random() * Math.max(100, w - 200),
+        y: h * 0.3 + Math.random() * h * 0.4,
+        angle: Math.random() < 0.5 ? 0 : Math.PI,
+        targetAngle: 0,
+        speed: 0.35 + Math.random() * 0.15,
+        scale: 0.9 + Math.random() * 0.3,
+        phase: Math.random() * 1000,
+        happy: 0
+      };
+      p.targetAngle = p.angle;
+      pets.push(p);
+    }
+    function updatePets(time, dt, width, height){
+      for (const p of pets) {
+        // gentle wandering: pick a new direction every so often
+        if (Math.random() < 0.004 * dt) p.targetAngle = Math.random() * Math.PI * 2;
+        let diff = p.targetAngle - p.angle;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        p.angle += diff * 0.02 * dt;
+        p.x += Math.cos(p.angle) * p.speed * dt;
+        p.y += Math.sin(p.angle) * p.speed * dt * 0.6;
+        // stay in the lagoon and out of the rocks
+        const rb = rockBounds(width);
+        if (p.x < 60) { p.x = 60; p.targetAngle = 0; }
+        if (p.x > width - 60) { p.x = width - 60; p.targetAngle = Math.PI; }
+        if (p.y < 60) { p.y = 60; p.targetAngle = Math.PI / 2; }
+        if (p.y > height - 60) { p.y = height - 60; p.targetAngle = -Math.PI / 2; }
+        if (p.x > rb.x0 - 40 && p.y < rb.y1 + 40) p.y = rb.y1 + 40;
+        if (p.happy > 0) p.happy -= dt;
+      }
+    }
+    function drawSeahorse(ctx, time, p){
+      // a seahorse swims upright, so it stays vertical and just flips
+      // to face the way it's drifting, with a gentle bob
+      const bob = Math.sin(time * 0.0012 + p.phase) * 3;
+      ctx.save();
+      ctx.translate(p.x, p.y + bob);
+      ctx.scale(p.scale * (Math.cos(p.angle) < 0 ? -1 : 1), p.scale);
+      // curled tail (bottom)
+      ctx.strokeStyle = '#d98e32';
+      ctx.lineWidth = 7;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(0, 18);
+      ctx.quadraticCurveTo(-14, 34, -4, 44);
+      ctx.quadraticCurveTo(4, 50, 2, 42);
+      ctx.stroke();
+      // body: an S-curved belly, golden with a pale belly
+      const bodyGrad = ctx.createLinearGradient(-14, 0, 14, 0);
+      bodyGrad.addColorStop(0, '#e8a34c');
+      bodyGrad.addColorStop(0.6, '#f5c86e');
+      bodyGrad.addColorStop(1, '#e8a34c');
+      ctx.fillStyle = bodyGrad;
+      ctx.beginPath();
+      ctx.moveTo(-10, -28);
+      ctx.quadraticCurveTo(-16, -8, -12, 8);
+      ctx.quadraticCurveTo(-10, 18, 0, 20);
+      ctx.quadraticCurveTo(10, 18, 12, 8);
+      ctx.quadraticCurveTo(16, -8, 10, -28);
+      ctx.quadraticCurveTo(0, -34, -10, -28);
+      ctx.fill();
+      // little belly ridges
+      ctx.strokeStyle = 'rgba(180, 110, 30, 0.6)';
+      ctx.lineWidth = 1.5;
+      [-14, -4, 6].forEach(y => {
+        ctx.beginPath();
+        ctx.moveTo(-11, y);
+        ctx.quadraticCurveTo(0, y + 3, 11, y);
+        ctx.stroke();
+      });
+      // dorsal fin on the back (left side)
+      ctx.fillStyle = 'rgba(245, 200, 110, 0.9)';
+      ctx.beginPath();
+      ctx.moveTo(-12, -6);
+      ctx.quadraticCurveTo(-24, 2, -12, 10);
+      ctx.closePath();
+      ctx.fill();
+      // head with a long snout, pointing right
+      ctx.fillStyle = '#f5c86e';
+      ctx.beginPath();
+      ctx.moveTo(-8, -28);
+      ctx.quadraticCurveTo(-6, -44, 8, -46);
+      ctx.quadraticCurveTo(20, -46, 26, -40);
+      ctx.quadraticCurveTo(28, -36, 22, -34);
+      ctx.quadraticCurveTo(10, -32, 8, -28);
+      ctx.closePath();
+      ctx.fill();
+      // coronet (the little crown on top of its head)
+      ctx.fillStyle = '#d98e32';
+      ctx.beginPath();
+      ctx.moveTo(-4, -44);
+      ctx.lineTo(-8, -52);
+      ctx.lineTo(-2, -48);
+      ctx.lineTo(2, -54);
+      ctx.lineTo(6, -47);
+      ctx.closePath();
+      ctx.fill();
+      // eye
+      ctx.fillStyle = '#2b1d0e';
+      ctx.beginPath();
+      ctx.arc(8, -40, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(9, -41, 1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    function drawOtter(ctx, time, p){
+      // a baby otter swimming, facing the way it moves
+      const wig = Math.sin(time * 0.004 + p.phase) * 0.12;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle + wig * 0.4);
+      ctx.scale(p.scale, p.scale);
+      // long tail, tapering, wagging gently
+      ctx.strokeStyle = '#6b4423';
+      ctx.lineWidth = 12;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-28, 0);
+      ctx.quadraticCurveTo(-52, 4 + Math.sin(time * 0.004 + p.phase) * 5, -66, 0);
+      ctx.stroke();
+      // body: a soft brown sausage, lighter belly
+      ctx.fillStyle = '#8b5a2b';
+      ctx.beginPath();
+      ctx.ellipse(-6, 0, 34, 15, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#c89b6a';
+      ctx.beginPath();
+      ctx.ellipse(-2, 6, 26, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // little paws paddling
+      ctx.fillStyle = '#6b4423';
+      ctx.beginPath();
+      ctx.ellipse(-18, 12, 7, 4, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(8, 12, 7, 4, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+      // head
+      ctx.fillStyle = '#8b5a2b';
+      ctx.beginPath();
+      ctx.arc(26, -4, 14, 0, Math.PI * 2);
+      ctx.fill();
+      // round ears
+      ctx.fillStyle = '#6b4423';
+      ctx.beginPath();
+      ctx.arc(18, -16, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(32, -16, 5, 0, Math.PI * 2);
+      ctx.fill();
+      // pale face patch
+      ctx.fillStyle = '#e8d5b5';
+      ctx.beginPath();
+      ctx.ellipse(30, 0, 9, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // nose + eyes
+      ctx.fillStyle = '#2b1d0e';
+      ctx.beginPath();
+      ctx.arc(38, -4, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(26, -8, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(34, -9, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    function drawOctopus(ctx, time, p){
+      // a baby octopus, mantle first, eight wavy tentacles trailing
+      const wig = Math.sin(time * 0.003 + p.phase);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      ctx.scale(p.scale, p.scale);
+      // eight wavy tentacles trailing behind (to the left)
+      for (let k = -3; k <= 4; k++) {
+        const y0 = k * 7;
+        const sway = Math.sin(time * 0.004 + p.phase + k * 0.9) * 6;
+        ctx.strokeStyle = k % 2 === 0 ? '#a06cd5' : '#b388ff';
+        ctx.lineWidth = 7;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-18, y0);
+        ctx.quadraticCurveTo(-34, y0 + sway, -48, y0 + sway * 1.4);
+        ctx.stroke();
+        // little suckers
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath();
+        ctx.arc(-34, y0 + sway * 0.7, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // round mantle (head)
+      const grad = ctx.createRadialGradient(6, -8, 4, 0, 0, 30);
+      grad.addColorStop(0, '#d0a2f7');
+      grad.addColorStop(1, '#8b5cf6');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.ellipse(4, 0, 26, 22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // two big cute eyes
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(14, -8, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(14, 8, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#2b1d0e';
+      ctx.beginPath();
+      ctx.arc(16, -8, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(16, 8, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(17, -9, 1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(17, 7, 1, 0, Math.PI * 2);
+      ctx.fill();
+      // a tiny smile
+      ctx.strokeStyle = 'rgba(43, 29, 14, 0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(24, 0, 4, -0.6, 0.6);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // --- Main Render Loop ---
     let lastTime = 0;
+    // Cache the background + vignette gradients: they only change when
+    // the window size or the day/night theme changes, so rebuilding them
+    // every frame was wasted work that made Chromebooks lag.
+    let bgCache = { w: 0, h: 0, theme: '', grad: null };
+    let vigCache = { w: 0, h: 0, grad: null };
     function render(time) {
       const dt = lastTime ? Math.min((time - lastTime) / 16.6667, 4) : 1;
       lastTime = time;
       const { width, height } = canvas;
 
       // 1. Background
-      const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
-      if (theme === 'night') {
-        bgGrad.addColorStop(0, '#012a2a');
-        bgGrad.addColorStop(1, '#000a0a');
-      } else {
-        bgGrad.addColorStop(0, '#008b8b'); 
-        bgGrad.addColorStop(1, '#003333'); 
+      if (bgCache.w !== width || bgCache.h !== height || bgCache.theme !== theme) {
+        const g = ctx.createLinearGradient(0, 0, 0, height);
+        if (theme === 'night') {
+          g.addColorStop(0, '#001a2e');
+          g.addColorStop(1, '#00060f');
+        } else {
+          g.addColorStop(0, '#008b8b');
+          g.addColorStop(1, '#003333');
+        }
+        bgCache = { w: width, h: height, theme, grad: g };
       }
-      ctx.fillStyle = bgGrad;
+      ctx.fillStyle = bgCache.grad;
       ctx.fillRect(0, 0, width, height);
 
       // 1.1 Vignette Shading (Day Mode Only)
       if (theme === 'day') {
+        if (vigCache.w !== width || vigCache.h !== height) {
+          const v = ctx.createRadialGradient(
+            width / 2, height / 2, Math.min(width, height) * 0.3,
+            width / 2, height / 2, Math.max(width, height) * 0.8
+          );
+          v.addColorStop(0, 'rgba(0,0,0,0)');
+          v.addColorStop(1, 'rgba(0, 20, 20, 0.4)');
+          vigCache = { w: width, h: height, grad: v };
+        }
         ctx.save();
-        const vignetteGrad = ctx.createRadialGradient(
-          width / 2, height / 2, Math.min(width, height) * 0.3,
-          width / 2, height / 2, Math.max(width, height) * 0.8
-        );
-        vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
-        vignetteGrad.addColorStop(1, 'rgba(0, 20, 20, 0.4)'); // Dark teal/black edge shadow
-        ctx.fillStyle = vignetteGrad;
+        ctx.fillStyle = vigCache.grad;
         ctx.fillRect(0, 0, width, height);
         ctx.restore();
       }
@@ -1895,6 +2264,13 @@
         if (v.kind === 'whaleShark') drawWhaleShark(ctx, time, v);
         else drawStingray(ctx, time, v);
       });
+      // 5.5b Unlocked pets (seahorse / baby otter / baby octopus)
+      updatePets(time, dt, width, height);
+      pets.forEach(p => {
+        if (p.kind === 'seahorse') drawSeahorse(ctx, time, p);
+        else if (p.kind === 'otter') drawOtter(ctx, time, p);
+        else drawOctopus(ctx, time, p);
+      });
       // 5.6 Glowing jellyfish (night only, all different colours)
       updateJellyfish(time, dt, width, height);
       jellyfish.forEach(j => drawJellyfish(ctx, time, j));
@@ -1934,6 +2310,11 @@
       requestAnimationFrame(render);
     }
     
+    // Load your saved shells, starfish, and animals before the game starts.
+    loadGame();
+    updateTreasureCount();
+    updateMenuUnlock();
+
     requestAnimationFrame(render);
 
     // --- Interactive Input Handlers ---
@@ -1949,13 +2330,25 @@
       }
 
       // Tap a shell or starfish to collect it (no food / wave). A new
-      // one washes up so there's always something to find.
+      // one washes up so there's always something to find. Collecting
+      // 1,000 of either kind earns a new animal!
       for (let i = collectibles.length - 1; i >= 0; i--) {
         const c = collectibles[i];
         if (Math.hypot(x - c.x, y - c.y) < c.size + 16) {
           if (c.kind === 'shell') shellCount++; else starCount++;
           updateTreasureCount();
           collectibles.splice(i, 1);
+          checkUnlock();
+          saveGame();
+          return;
+        }
+      }
+
+      // Pet an unlocked animal: tap one and it wiggles happily.
+      for (let i = 0; i < pets.length; i++) {
+        const p = pets[i];
+        if (Math.hypot(x - p.x, y - p.y) < 55 * p.scale + 14) {
+          p.happy = 120;
           return;
         }
       }
