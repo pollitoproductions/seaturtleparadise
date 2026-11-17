@@ -234,12 +234,14 @@
     }
 
     // --- Relaxing music (ORIGINAL, Web Audio — no audio files) ---
-    // Slow 60 BPM loop for the lagoon, in the same style as Slope's
+    // A gentle 80 BPM loop for the lagoon, in the same style as Slope's
     // chiptune scheduler but low-key: soft sine pad chords
-    // (Cmaj7 - Am7 - Fmaj7 - G, one chord per bar) plus a sparse,
-    // gentle sine melody. No drums — just water and music.
+    // (Cmaj7 - Am7 - Fmaj7 - G, one chord per bar), a real flowing
+    // pentatonic melody (a tune you can hum, not just a couple of
+    // notes), and a soft bass pulse on every beat so it has a gentle
+    // rhythm. No drums — just water and music.
     // Starts and stops with the mute button, like the water sound.
-    var MUS_BPM = 60;
+    var MUS_BPM = 80;
     var MUS_STEP = 60 / MUS_BPM / 4;   // one 16th note, in seconds
     var MUS_CHORDS = [
       [48, 52, 55, 59],   // Cmaj7 (C3 E3 G3 B3)
@@ -247,13 +249,14 @@
       [41, 45, 48, 52],   // Fmaj7 (F2 A2 C3 E3)
       [43, 47, 50, 53]    // G    (G2 B2 D3 F3)
     ];
-    // Melody: 64 steps (4 bars x 16), C-major pentatonic, long notes
-    // with lots of space between them — two soft notes per bar.
+    // Melody: 64 steps (4 bars x 16), C-major pentatonic, eighth notes —
+    // a flowing tune that rises and falls and comes back home. Each bar
+    // is one smooth phrase; the whole 4 bars make a little song.
     var MUS_MELODY = [
-      76,0,0,0, 0,0,0,0, 74,0,0,0, 0,0,0,0,
-      72,0,0,0, 0,0,0,0, 69,0,0,0, 0,0,0,0,
-      69,0,0,0, 0,0,0,0, 72,0,0,0, 0,0,0,0,
-      74,0,0,0, 0,0,0,0, 67,0,0,0, 0,0,0,0];
+      76,0,79,0, 81,0,79,0, 76,0,74,0, 72,0,74,0,
+      74,0,76,0, 79,0,76,0, 74,0,72,0, 74,0,76,0,
+      76,0,79,0, 81,0,79,0, 81,0,79,0, 76,0,74,0,
+      76,0,74,0, 72,0,74,0, 72,0,69,0, 67,0,0,0];
     var musicGain = null, musTimer = null, musStep = 0, musNextTime = 0;
     function midiToFreq(m){ return 440 * Math.pow(2, (m - 69) / 12); }
     function mnote(midi, dur, type, vol, when){
@@ -269,18 +272,38 @@
         o.start(t); o.stop(t + dur + 0.05);
       }catch(e){}
     }
+    // Soft bass pulse for the beat — a low note with a quick attack
+    // (unlike the pad's slow fade-in) so each beat lands gently.
+    function mbeat(midi, when){
+      if(!musicGain) return;
+      try{
+        var t = when || audioCtx.currentTime;
+        var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = "sine"; o.frequency.setValueAtTime(midiToFreq(midi), t);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.16, t + 0.05);   // quick attack
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+        o.connect(g); g.connect(musicGain);
+        o.start(t); o.stop(t + 0.55);
+      }catch(e){}
+    }
     function musicScheduler(){
       if(!musicGain) return;
       while(musNextTime < audioCtx.currentTime + 0.15){
         var s = musStep % 64;
+        var bar = Math.floor(s / 16) % 4;
         if(s % 16 === 0){
-          var chord = MUS_CHORDS[Math.floor(s / 16) % 4];
+          var chord = MUS_CHORDS[bar];
           for(var i = 0; i < chord.length; i++){
             mnote(chord[i], MUS_STEP * 16, "sine", 0.10, musNextTime);   // pad, one bar long
           }
         }
+        // gentle bass pulse on every beat (the chord root, one octave down)
+        if(s % 4 === 0){
+          mbeat(MUS_CHORDS[bar][0] - 12, musNextTime);
+        }
         var m = MUS_MELODY[s];
-        if(m) mnote(m, MUS_STEP * 6, "sine", 0.25, musNextTime);   // melody, soft and long
+        if(m) mnote(m, MUS_STEP * 4, "triangle", 0.22, musNextTime);   // melody, bright and clear
         musStep++;
         musNextTime += MUS_STEP;
       }
@@ -794,6 +817,7 @@
     const visitors = [];
     const splashes = [];
     let nextVisitorAt = 0;   // rAF timestamp of the next spawn
+    let firstVisitDone = false;   // the very first visitor is always a whale shark
     let foodKind = 'cucumber';   // 'cucumber' normally, 'seaweed' while a visitor is here
     let foodBtnKind = 'cucumber'; // what the food button currently shows
 
@@ -854,14 +878,18 @@
       const dir = Math.random() < 0.5 ? 1 : -1;
       const y = height * (0.15 + Math.random() * 0.65);
       const x = dir === 1 ? -260 : width + 260;
-      // stingray 40%, baby stingray 35%, whale shark 25% (the rarest)
+      // whale shark 40%, baby stingray 35%, stingray 25% — the whale
+      // shark is the star, so it shows up the most. The very first
+      // visitor is always a whale shark, so you meet one right away.
       const r = Math.random();
-      const kind = r < 0.4 ? 'stingray' : r < 0.75 ? 'babyStingray' : 'whaleShark';
+      let kind;
+      if (!firstVisitDone) { kind = 'whaleShark'; firstVisitDone = true; }
+      else { kind = r < 0.4 ? 'whaleShark' : r < 0.75 ? 'babyStingray' : 'stingray'; }
       spawnVisitor(kind, x, y, dir);
       // sometimes a couple swims through together (30%)
       if (Math.random() < 0.3) {
         const r2 = Math.random();
-        const kind2 = r2 < 0.4 ? 'stingray' : r2 < 0.75 ? 'babyStingray' : 'whaleShark';
+        const kind2 = r2 < 0.4 ? 'whaleShark' : r2 < 0.75 ? 'babyStingray' : 'stingray';
         const y2 = Math.min(height * 0.85, Math.max(height * 0.15, y + (Math.random() < 0.5 ? -1 : 1) * (90 + Math.random() * 70)));
         spawnVisitor(kind2, x - dir * (180 + Math.random() * 100), y2, dir);
       }
@@ -1354,6 +1382,19 @@
           t.offscreenTime = 0; // reset after repositioning
         }
 
+        // Rocks are solid: a turtle that swims into the rock bank gets
+        // pushed back out (to the nearest edge — left or bottom) and
+        // steered back toward the lagoon. The 22px margin keeps its
+        // body clear of the stones instead of overlapping them. The
+        // waterfall water below the rocks is NOT blocked — turtles can
+        // swim under the falling water in the lagoon.
+        var rb = rockBounds(width), rbuf = 22;
+        if(t.x > rb.x0 - rbuf && t.x < rb.x1 && t.y > rb.y0 && t.y < rb.y1 + rbuf){
+          if((t.x - (rb.x0 - rbuf)) < ((rb.y1 + rbuf) - t.y)){ t.x = rb.x0 - rbuf; }
+          else { t.y = rb.y1 + rbuf; }
+          t.targetAngle = Math.atan2((height / 2) - t.y, (width / 2) - t.x);
+        }
+
         drawRealisticTurtle(ctx, time, width, height, t);
       });
 
@@ -1365,20 +1406,50 @@
     // there; the water only flows in 'water' mode (the wave setting).
     // The ripples it makes are gentle and never scare the turtles
     // (see the scare check — source 'waterfall').
+    // The rock bank (top-right corner) is solid. Turtles can't swim
+    // under the rocks — but they CAN swim under the waterfall water
+    // (the diagonal sheet below the rocks, in the lagoon). These bounds
+    // match the drawn rock bank: from the leftmost stone to the right
+    // edge, top edge down to the base tier. Turtles are pushed out of
+    // this box; the water below it stays open.
+    function rockBounds(width){
+      var sc = Math.max(0.6, Math.min(1, width / 900));
+      return { x0: width - 515 * sc, y0: 0, x1: width, y1: 181 * sc };
+    }
     let lastFallWave = 0;
     function drawWaterfall(ctx, time, width, height){
       const sc = Math.max(0.6, Math.min(1, width / 900));   // shrink on narrow screens
       const fallX = width - 220 * sc;                       // left of the buttons
-      // Rocks: stacked in tiers like a natural cairn — each upper rock
-      // sits in the gap between the two below it, with varied shades
-      // and slight tilts so they read as separate stones, not one blob.
+      // Rocks: a wide bank filling the WHOLE top-right corner — four
+      // staggered tiers of stones, overlapping so they read as one solid
+      // rocky bank, not a little pile. The bank runs from the top edge
+      // down to the lagoon and from the right edge left across the corner.
       const rocks = [
-        {x: -26, y: 28, rx: 44, ry: 24, rot: 0.03, c: '#64707d'},   // top
-        {x: -75, y: 58, rx: 52, ry: 26, rot: 0.07, c: '#5b6470'},   // middle
-        {x:  22, y: 55, rx: 56, ry: 27, rot: -0.06, c: '#6b7280'},  // middle
-        {x: -125, y: 88, rx: 60, ry: 30, rot: -0.08, c: '#6b7280'}, // base
-        {x: -25, y: 92, rx: 66, ry: 32, rot: 0.05, c: '#5b6470'},   // base
-        {x:  70, y: 86, rx: 55, ry: 28, rot: -0.04, c: '#64707d'}   // base
+        // top tier (along the top edge)
+        {x:-205, y:18, rx:62, ry:28, rot:0.04, c:'#64707d'},
+        {x:-110, y:14, rx:58, ry:26, rot:-0.05, c:'#5b6470'},
+        {x:-15, y:20, rx:64, ry:30, rot:0.06, c:'#6b7280'},
+        {x:80, y:15, rx:60, ry:27, rot:-0.03, c:'#64707d'},
+        {x:170, y:18, rx:62, ry:28, rot:0.05, c:'#5b6470'},
+        // second tier
+        {x:-235, y:60, rx:60, ry:30, rot:-0.07, c:'#5b6470'},
+        {x:-140, y:58, rx:64, ry:31, rot:0.05, c:'#6b7280'},
+        {x:-45, y:62, rx:62, ry:30, rot:-0.04, c:'#64707d'},
+        {x:50, y:58, rx:66, ry:32, rot:0.06, c:'#5b6470'},
+        {x:145, y:60, rx:60, ry:29, rot:-0.05, c:'#6b7280'},
+        {x:205, y:58, rx:56, ry:28, rot:0.04, c:'#64707d'},
+        // third tier
+        {x:-210, y:105, rx:62, ry:31, rot:0.06, c:'#6b7280'},
+        {x:-115, y:102, rx:60, ry:30, rot:-0.05, c:'#64707d'},
+        {x:-20, y:108, rx:64, ry:32, rot:0.04, c:'#5b6470'},
+        {x:75, y:104, rx:62, ry:31, rot:-0.06, c:'#6b7280'},
+        {x:170, y:106, rx:60, ry:30, rot:0.05, c:'#64707d'},
+        // base tier (meets the lagoon)
+        {x:-175, y:148, rx:64, ry:31, rot:-0.05, c:'#5b6470'},
+        {x:-80, y:150, rx:62, ry:30, rot:0.06, c:'#6b7280'},
+        {x:15, y:148, rx:64, ry:31, rot:-0.04, c:'#64707d'},
+        {x:110, y:150, rx:60, ry:30, rot:0.05, c:'#5b6470'},
+        {x:190, y:148, rx:58, ry:29, rot:-0.06, c:'#6b7280'}
       ];
       ctx.save();
       rocks.forEach(r => {
@@ -1403,7 +1474,7 @@
       if(mode === 'water'){
         const lipY = 60;    // where the water pours over the rocks
         const baseY = 235;  // where it hits the lagoon
-        const topL = fallX - 160 * sc, topR = fallX + 110 * sc;  // spans all the rocks
+        const topL = fallX - 210 * sc, topR = fallX + 190 * sc;  // spans the whole rock bank
         const shift = 120 * sc;  // how far left the base sits (the diagonal)
         const fallH = baseY - lipY;
         ctx.save();
