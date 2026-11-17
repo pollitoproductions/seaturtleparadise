@@ -269,16 +269,17 @@
     // Melody: 128 steps (8 bars x 16), C-major — a real little SONG,
     // not just notes. It has a hook you can hum (E-G-A-G) that comes
     // back three times, a higher middle part, and it ends on C so it
-    // feels finished. Quarter notes and held notes, so it sings gently.
+    // feels finished. Eighth-note passing tones between the main notes
+    // make it flow smoothly instead of hopping from note to note.
     var MUS_MELODY = [
-      76,0,0,0, 79,0,0,0, 81,0,0,0, 79,0,0,0,
-      76,0,0,0, 74,0,0,0, 72,0,0,0, 0,0,0,0,
-      76,0,0,0, 79,0,0,0, 81,0,0,0, 79,0,0,0,
-      81,0,0,0, 79,0,0,0, 76,0,0,0, 72,0,0,0,
-      77,0,0,0, 81,0,0,0, 79,0,0,0, 77,0,0,0,
-      76,0,0,0, 74,0,0,0, 72,0,0,0, 0,0,0,0,
-      76,0,0,0, 79,0,0,0, 81,0,0,0, 79,0,0,0,
-      76,0,0,0, 74,0,0,0, 72,0,0,0, 0,0,0,0];
+      76,0,79,0, 81,0,0,0, 79,0,76,0, 74,0,0,0,
+      76,0,74,0, 72,0,0,0, 74,0,76,0, 72,0,0,0,
+      76,0,79,0, 81,0,0,0, 79,0,76,0, 74,0,0,0,
+      81,0,0,0, 79,0,76,0, 72,0,0,0, 74,0,0,0,
+      77,0,81,0, 79,0,0,0, 77,0,76,0, 74,0,0,0,
+      76,0,74,0, 72,0,0,0, 74,0,76,0, 72,0,0,0,
+      76,0,79,0, 81,0,0,0, 79,0,76,0, 74,0,0,0,
+      76,0,74,0, 72,0,0,0, 0,0,0,0, 0,0,0,0];
     var musicGain = null, musTimer = null, musStep = 0, musNextTime = 0;
     function midiToFreq(m){ return 440 * Math.pow(2, (m - 69) / 12); }
     function mnote(midi, dur, type, vol, when){
