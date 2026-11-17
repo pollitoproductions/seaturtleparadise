@@ -249,14 +249,19 @@
       [41, 45, 48, 52],   // Fmaj7 (F2 A2 C3 E3)
       [43, 47, 50, 53]    // G    (G2 B2 D3 F3)
     ];
-    // Melody: 64 steps (4 bars x 16), C-major pentatonic, eighth notes —
-    // a flowing tune that rises and falls and comes back home. Each bar
-    // is one smooth phrase; the whole 4 bars make a little song.
+    // Melody: 128 steps (8 bars x 16), C-major — a real little SONG,
+    // not just notes. It has a hook you can hum (E-G-A-G) that comes
+    // back three times, a higher middle part, and it ends on C so it
+    // feels finished. Quarter notes and held notes, so it sings gently.
     var MUS_MELODY = [
-      76,0,79,0, 81,0,79,0, 76,0,74,0, 72,0,74,0,
-      74,0,76,0, 79,0,76,0, 74,0,72,0, 74,0,76,0,
-      76,0,79,0, 81,0,79,0, 81,0,79,0, 76,0,74,0,
-      76,0,74,0, 72,0,74,0, 72,0,69,0, 67,0,0,0];
+      76,0,0,0, 79,0,0,0, 81,0,0,0, 79,0,0,0,
+      76,0,0,0, 74,0,0,0, 72,0,0,0, 0,0,0,0,
+      76,0,0,0, 79,0,0,0, 81,0,0,0, 79,0,0,0,
+      81,0,0,0, 79,0,0,0, 76,0,0,0, 72,0,0,0,
+      77,0,0,0, 81,0,0,0, 79,0,0,0, 77,0,0,0,
+      76,0,0,0, 74,0,0,0, 72,0,0,0, 0,0,0,0,
+      76,0,0,0, 79,0,0,0, 81,0,0,0, 79,0,0,0,
+      76,0,0,0, 74,0,0,0, 72,0,0,0, 0,0,0,0];
     var musicGain = null, musTimer = null, musStep = 0, musNextTime = 0;
     function midiToFreq(m){ return 440 * Math.pow(2, (m - 69) / 12); }
     function mnote(midi, dur, type, vol, when){
@@ -290,7 +295,7 @@
     function musicScheduler(){
       if(!musicGain) return;
       while(musNextTime < audioCtx.currentTime + 0.15){
-        var s = musStep % 64;
+        var s = musStep % 128;   // 8 bars x 16 steps
         var bar = Math.floor(s / 16) % 4;
         if(s % 16 === 0){
           var chord = MUS_CHORDS[bar];
@@ -837,7 +842,9 @@
       foodBtn.title = want === 'seaweed' ? 'Feed seaweed to the visitors' : 'Feeding Mode';
       foodBtn.setAttribute('aria-label', foodBtn.title);
       if (want === 'cucumber') {
-        gameState.food = gameState.food.filter(f => f.kind !== 'seaweed');
+        // uneaten seaweed turns back into cucumbers (for the turtles)
+        // instead of just vanishing
+        gameState.food.forEach(f => { if (f.kind === 'seaweed') { f.kind = 'cucumber'; f.targetSize = 7; } });
       }
     }
 
@@ -1024,9 +1031,10 @@
       ctx.restore();
     }
 
-    // Baby whale shark, top-down, facing +x in local space. Long torpedo
-    // body, wide flat head, white spots and pale stripes on a grey-blue
-    // back, pectoral fins, and a tail that sways as it swims.
+    // Baby whale shark, top-down, facing +x in local space. Long
+    // straight-sided body (like a rounded rectangle), wide flat head,
+    // white spots and pale stripes on a grey-blue back, big round
+    // pectoral fins, and a tail that sways as it swims.
     const WHALE_SPOTS = (() => {
       // deterministic spots so they don't flicker between frames
       let seed = 1234567;
@@ -1062,28 +1070,34 @@
       ctx.fillStyle = '#3a4a5a';
       ctx.fill();
       ctx.restore();
-      // pectoral fins (swept back, one each side near the head)
+      // pectoral fins — big and round, like paddles, one on each side
+      // (the rounded fins in the sketch, one above and one below the body)
       [-1, 1].forEach(side => {
         ctx.beginPath();
-        ctx.moveTo(95, side * 58);
-        ctx.quadraticCurveTo(45, side * 108, 5, side * 96);
-        ctx.quadraticCurveTo(55, side * 62, 95, side * 58);
+        ctx.moveTo(90, side * 60);
+        ctx.quadraticCurveTo(30, side * 132, -30, side * 116);
+        ctx.quadraticCurveTo(-58, side * 106, -36, side * 70);
+        ctx.quadraticCurveTo(20, side * 62, 90, side * 60);
         ctx.closePath();
         ctx.fillStyle = '#42536a';
         ctx.fill();
       });
-      // body: long torpedo, wide at the head, tapering to the tail
+      // body: long and straight-sided, like a rounded rectangle — wide
+      // for most of its length with a round head, only narrowing near
+      // the tail (the long straight body in the sketch, not a torpedo)
       const grad = ctx.createLinearGradient(0, -72, 0, 72);
       grad.addColorStop(0, '#5a6a7a');
       grad.addColorStop(0.5, '#42536a');
       grad.addColorStop(1, '#2e3a46');
       ctx.beginPath();
       ctx.moveTo(210, 0);
-      ctx.bezierCurveTo(200, -45, 150, -70, 80, -72);
-      ctx.bezierCurveTo(0, -70, -100, -40, -170, -16);
-      ctx.lineTo(-170, 16);
-      ctx.bezierCurveTo(-100, 40, 0, 70, 80, 72);
-      ctx.bezierCurveTo(150, 70, 200, 45, 210, 0);
+      ctx.bezierCurveTo(205, -55, 170, -68, 120, -68);
+      ctx.lineTo(-120, -68);
+      ctx.bezierCurveTo(-160, -68, -175, -55, -178, -30);
+      ctx.lineTo(-178, 30);
+      ctx.bezierCurveTo(-175, 55, -160, 68, -120, 68);
+      ctx.lineTo(120, 68);
+      ctx.bezierCurveTo(170, 68, 205, 55, 210, 0);
       ctx.closePath();
       ctx.fillStyle = grad;
       ctx.fill();
