@@ -71,8 +71,22 @@
     </button>
   </div>
 
-  <!-- Treasures collected (shells + starfish) -->
-  <div id="treasureCount" class="absolute top-8 left-8 z-20 pointer-events-none px-4 py-2 rounded-full backdrop-blur-md bg-slate-900/50 border border-slate-600 text-white text-lg font-semibold shadow-lg">🐚 0&nbsp;&nbsp;⭐ 0</div>
+  <!-- Collection menu button (top-left) — tap to see what you've collected -->
+  <button id="menuBtn" class="absolute top-8 left-8 z-20 w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md bg-slate-900/50 border border-slate-600 text-white text-2xl shadow-lg" title="My Collection" aria-label="My Collection">🎒</button>
+  <!-- Collection menu panel (hidden until you tap the button) -->
+  <div id="menuPanel" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 hidden w-72 max-w-[85vw] rounded-2xl backdrop-blur-md bg-slate-900/80 border border-slate-600 text-white p-5 shadow-2xl">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-xl font-bold">My Collection</h2>
+      <button id="menuClose" class="w-8 h-8 rounded-full bg-slate-700/70 text-white text-lg leading-none">✕</button>
+    </div>
+    <div class="text-lg mb-1">🐚 Shells: <span id="menuShells">0</span></div>
+    <div class="text-lg mb-3">⭐ Starfish: <span id="menuStars">0</span></div>
+    <div class="border-t border-slate-600 pt-3">
+      <div class="text-sm text-slate-300 mb-1">Animals</div>
+      <div class="text-sm">🐢 Turtles — take care of them and they'll grow!</div>
+      <div class="text-sm text-slate-400">New animals will appear here when you unlock them.</div>
+    </div>
+  </div>
 
   <canvas id="oceanCanvas"></canvas>
 
@@ -295,16 +309,16 @@
         o.start(t); o.stop(t + 0.55);
       }catch(e){}
     }
-    // Soft piano for the melody — a triangle note with a fast hammer
-    // attack plus a soft octave above, both decaying like a piano
-    // string (not a flute's slow swell, not a music box's pure sine).
+    // Soft piano for the melody — a sine note with a fast hammer
+    // attack plus a very soft octave above, both decaying gently like
+    // a piano string. Sine (not triangle) keeps it soft, not sharp.
     function mpiano(midi, dur, vol, when){
       if(!musicGain) return;
       try{
         var t = when || audioCtx.currentTime;
         var f = midiToFreq(midi);
         var o1 = audioCtx.createOscillator(), g1 = audioCtx.createGain();
-        o1.type = "triangle"; o1.frequency.setValueAtTime(f, t);
+        o1.type = "sine"; o1.frequency.setValueAtTime(f, t);
         g1.gain.setValueAtTime(0.0001, t);
         g1.gain.exponentialRampToValueAtTime(vol, t + 0.01);
         g1.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -313,7 +327,7 @@
         var o2 = audioCtx.createOscillator(), g2 = audioCtx.createGain();
         o2.type = "sine"; o2.frequency.setValueAtTime(f * 2, t);
         g2.gain.setValueAtTime(0.0001, t);
-        g2.gain.exponentialRampToValueAtTime(vol * 0.3, t + 0.01);
+        g2.gain.exponentialRampToValueAtTime(vol * 0.2, t + 0.01);
         g2.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.6);
         o2.connect(g2); g2.connect(musicGain);
         o2.start(t); o2.stop(t + dur * 0.6 + 0.05);
@@ -335,7 +349,7 @@
           mbeat(MUS_CHORDS[bar][0] - 12, musNextTime);
         }
         var m = MUS_MELODY[s];
-        if(m) mpiano(m, MUS_STEP * 6, 0.20, musNextTime);   // melody, soft piano
+        if(m) mpiano(m, MUS_STEP * 6, 0.15, musNextTime);   // melody, soft piano
         musStep++;
         musNextTime += MUS_STEP;
       }
@@ -421,6 +435,17 @@
       updateFoodButton();
     });
 
+    // Collection menu: tap the backpack to see your shells, starfish,
+    // and animals (new animals will show up here when you unlock them).
+    const menuBtn = document.getElementById('menuBtn');
+    const menuPanel = document.getElementById('menuPanel');
+    const menuClose = document.getElementById('menuClose');
+    menuBtn.addEventListener('click', () => {
+      updateTreasureCount();
+      menuPanel.classList.toggle('hidden');
+    });
+    menuClose.addEventListener('click', () => menuPanel.classList.add('hidden'));
+
     // --- Setup & Sizing ---
 
     // (Removed duplicate resizeCanvas event listener; now handled above)
@@ -488,10 +513,20 @@
       { scaleMult: 0.85, timeOffset: 13000, palette: PALETTES.greenSeaTurtle, hasSpots: true },
       { scaleMult: 0.80, timeOffset: 14500, palette: PALETTES.greenSeaTurtle },
       { scaleMult: 0.75, timeOffset: 16000, palette: PALETTES.greenSeaTurtle }
-    ].map(t => {
+    ].map((t, i) => {
       const spd = t.isBaby ? (1.2 + Math.random() * 0.8) * t.scaleMult : (0.4 + Math.random() * 0.5) * t.scaleMult;
       return {
         ...t,
+        // Tamagotchi: every turtle starts as a baby (a little smaller
+        // than its full size) with empty hearts. Feed it and pet it to
+        // fill its hearts; when they're full it grows to its full size.
+        adultScale: t.scaleMult,
+        scaleMult: t.scaleMult * 0.6,
+        hearts: 0,
+        grown: false,
+        // at night, every other turtle swims away to sleep, so the
+        // jellyfish have room (only in nighttime mode)
+        nightSleeper: i % 2 === 1,
         x: Math.random() * canvas.width,
         y: Math.random() * canvas.height,
         angle: Math.random() * Math.PI * 2,
@@ -842,6 +877,20 @@
       ctx.restore();
     }
 
+    // Tamagotchi care: feed or pet a turtle to fill its hearts. When
+    // its hearts are full it grows up to its full size (and celebrates
+    // with a happy spin). Already-grown turtles just stay grown.
+    function careFor(t, amount){
+      if (t.grown) return;
+      t.hearts = Math.min(100, (t.hearts || 0) + amount);
+      if (t.hearts >= 100) {
+        t.grown = true;
+        t.scaleMult = t.adultScale;
+        t.happy = 180;
+        t.happySpin = 0;
+      }
+    }
+
     const drawRealisticTurtle = (ctx, globalTime, width, height, t) => {
       const time = globalTime + t.timeOffset;
       const hoverY = Math.sin(time * 0.001) * 10;
@@ -872,6 +921,22 @@
         const prog = (180 - t.happy) / 180;
         drawHeart(ctx, t.x - 12, t.y - 28 - prog * 45, 9, Math.max(0, 1 - prog));
         drawHeart(ctx, t.x + 14, t.y - 34 - prog * 55, 7, Math.max(0, 1 - prog * 0.8));
+      }
+
+      // Tamagotchi hearts meter: a tiny bar above a baby turtle showing
+      // how full its hearts are (it grows up when the bar is full)
+      if (!t.grown) {
+        const bw = 36, bh = 5, bx = t.x - bw / 2, by = t.y - 48;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 20, 20, 0.55)';
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, 2.5);
+        ctx.fill();
+        ctx.fillStyle = '#ff6b9d';
+        ctx.beginPath();
+        ctx.roundRect(bx, by, Math.max(0, bw * ((t.hearts || 0) / 100)), bh, 2.5);
+        ctx.fill();
+        ctx.restore();
       }
     };
 
@@ -906,8 +971,10 @@
     const collectibles = [];
     let shellCount = 0, starCount = 0;
     function updateTreasureCount(){
-      const el = document.getElementById('treasureCount');
-      if (el) el.innerHTML = '🐚 ' + shellCount + '&nbsp;&nbsp;⭐ ' + starCount;
+      const sh = document.getElementById('menuShells');
+      const st = document.getElementById('menuStars');
+      if (sh) sh.textContent = shellCount;
+      if (st) st.textContent = starCount;
     }
     function spawnCollectible(width, height){
       const kind = Math.random() < 0.5 ? 'shell' : 'starfish';
@@ -929,22 +996,26 @@
       ctx.translate(c.x, c.y + bob);
       ctx.rotate(c.rot);
       if (c.kind === 'shell') {
-        // a scallop shell: a fan with ridges
+        // a spiral seashell: a round shell with a coil inside
+        // (like a conch — not an orange slice)
         ctx.fillStyle = '#f5d0a9';
         ctx.strokeStyle = '#d9a066';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(0, 0, c.size, Math.PI, 0);
-        ctx.closePath();
+        ctx.arc(0, 0, c.size, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        ctx.strokeStyle = '#e8b88a';
-        for (let k = -2; k <= 2; k++) {
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.lineTo(Math.sin(k * 0.5) * c.size, -Math.cos(k * 0.5) * c.size);
-          ctx.stroke();
+        ctx.strokeStyle = '#c98a5a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let a = 0; a <= 3 * Math.PI * 2; a += 0.15) {
+          const r = (a / (3 * Math.PI * 2)) * c.size * 0.85;
+          const x = Math.cos(a) * r;
+          const y = Math.sin(a) * r;
+          if (a === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
         }
+        ctx.stroke();
       } else {
         // a starfish: a five-pointed star
         ctx.fillStyle = '#ff9e7d';
@@ -1116,11 +1187,13 @@
     // it flares bright for a moment. They fade out when day comes.
     function updateJellyfish(time, dt, width, height){
       const isNight = theme === 'night';
-      if (isNight && jellyfish.length < 4 && Math.random() < 0.02 * dt) {
+      // at night they're already there, spread through the lagoon
+      // (not drifting in from the bottom) — fill up fast when night starts
+      if (isNight && jellyfish.length < 4 && Math.random() < 0.08 * dt) {
         const c = JELLY_COLORS[Math.floor(Math.random() * JELLY_COLORS.length)];
         jellyfish.push({
           x: 60 + Math.random() * (width - 120),
-          y: height + 40,
+          y: 80 + Math.random() * (height - 160),
           size: 22 + Math.random() * 18,
           color: c.color, light: c.light,
           phase: Math.random() * 1000,
@@ -1130,7 +1203,7 @@
       }
       for (let i = jellyfish.length - 1; i >= 0; i--) {
         const j = jellyfish[i];
-        j.alpha += (isNight ? 0.02 : -0.02) * dt;
+        j.alpha += (isNight ? 0.03 : -0.03) * dt;
         if (j.alpha <= 0 && !isNight) { jellyfish.splice(i, 1); continue; }
         j.alpha = Math.max(0, Math.min(1, j.alpha));
         j.y -= j.drift * dt;
@@ -1144,31 +1217,52 @@
       const pulse = 0.5 + 0.5 * Math.sin(t * 0.002);
       const glow = 0.35 + 0.45 * pulse + j.lit * 0.6;
       const r = j.size;
+      // the bell gently pulses (squeezes in and out) as it swims
+      const squeeze = 1 + Math.sin(t * 0.002) * 0.08;
       ctx.save();
       ctx.translate(j.x, j.y);
       ctx.globalAlpha = j.alpha;
       ctx.shadowColor = j.color;
       ctx.shadowBlur = 25 * glow + 10;
-      // bell: a glowing dome
-      const grad = ctx.createRadialGradient(0, -r * 0.3, r * 0.1, 0, 0, r);
+      // bell: a round umbrella dome, wider than it is tall, with a
+      // soft rim — like a real jellyfish, not a half-circle
+      const grad = ctx.createRadialGradient(0, -r * 0.4, r * 0.1, 0, 0, r * 1.1);
       grad.addColorStop(0, j.light);
-      grad.addColorStop(0.7, j.color);
+      grad.addColorStop(0.6, j.color);
       grad.addColorStop(1, j.color);
       ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(0, 0, r, Math.PI, 0);
+      ctx.moveTo(-r, 0);
+      ctx.bezierCurveTo(-r, -r * 0.9 * squeeze, -r * 0.5, -r * 1.05 * squeeze, 0, -r * 1.05 * squeeze);
+      ctx.bezierCurveTo(r * 0.5, -r * 1.05 * squeeze, r, -r * 0.9 * squeeze, r, 0);
+      // a soft scalloped rim along the bottom edge of the bell
+      for (let k = 4; k >= -4; k--) {
+        ctx.quadraticCurveTo(k * r * 0.2, r * 0.18, (k - 0.5) * r * 0.2, 0);
+      }
       ctx.closePath();
       ctx.fill();
       ctx.shadowBlur = 0;
-      // tentacles: wavy lines hanging below the bell
-      ctx.strokeStyle = j.color;
-      ctx.lineWidth = 2;
+      // oral arms: short frilly ribbons in the middle, under the bell
+      ctx.strokeStyle = j.light;
+      ctx.lineWidth = 3;
       ctx.lineCap = 'round';
-      for (let k = -2; k <= 2; k++) {
-        const sway = Math.sin(t * 0.003 + k) * r * 0.15;
+      for (let k = -1; k <= 1; k++) {
+        const sway = Math.sin(t * 0.004 + k * 1.3) * r * 0.12;
         ctx.beginPath();
-        ctx.moveTo(k * r * 0.35, r * 0.2);
-        ctx.quadraticCurveTo(k * r * 0.35 + sway, r * 0.8, k * r * 0.35 + sway * 1.5, r * 1.5);
+        ctx.moveTo(k * r * 0.2, r * 0.1);
+        ctx.quadraticCurveTo(k * r * 0.2 + sway, r * 0.55, k * r * 0.2 + sway * 1.4, r * 0.9);
+        ctx.stroke();
+      }
+      // tentacles: long, thin, flowing threads hanging from the rim
+      ctx.strokeStyle = j.color;
+      ctx.lineWidth = 1.5;
+      for (let k = -4; k <= 4; k++) {
+        if (k === 0) continue;
+        const sway = Math.sin(t * 0.003 + k * 0.8) * r * 0.2;
+        const sway2 = Math.sin(t * 0.002 + k * 1.7) * r * 0.25;
+        ctx.beginPath();
+        ctx.moveTo(k * r * 0.2, r * 0.05);
+        ctx.bezierCurveTo(k * r * 0.2 + sway, r * 0.7, k * r * 0.2 + sway2, r * 1.3, k * r * 0.2 + sway2 * 1.3, r * 1.9);
         ctx.stroke();
       }
       ctx.restore();
@@ -1528,6 +1622,10 @@
 
       // 5. Turtles
       turtles.forEach(t => {
+        // at night, the night sleepers swim away to sleep — they're not
+        // here, so skip them (they come back in the daytime, and the
+        // jellyfish get the lagoon to themselves)
+        if (theme === 'night' && t.nightSleeper) return;
 
         let isAvoidingEdge = false;
         let foundFood = false;
@@ -1569,9 +1667,11 @@
             if (nearestDist < 60 * t.scaleMult) {
                gameState.food.splice(nearestFood.index, 1);
                // happy turtle! It spins with joy and hearts float up
-               // for a few seconds after eating.
+               // for a few seconds after eating. Feeding fills its
+               // Tamagotchi hearts too.
                t.happy = 180;
                t.happySpin = 0;
+               careFor(t, 25);
             }
           }
         }
@@ -1845,6 +1945,20 @@
           if (c.kind === 'shell') shellCount++; else starCount++;
           updateTreasureCount();
           collectibles.splice(i, 1);
+          return;
+        }
+      }
+
+      // Pet a turtle: tap one and it wiggles happily, hearts float up,
+      // and its Tamagotchi hearts fill a little (no food / wave).
+      for (let i = 0; i < turtles.length; i++) {
+        const t = turtles[i];
+        if (theme === 'night' && t.nightSleeper) continue;
+        const tapR = 60 * Math.min(1, Math.min(canvas.width, canvas.height) / 900) * t.scaleMult + 18;
+        if (Math.hypot(x - t.x, y - t.y) < tapR) {
+          t.happy = 120;
+          t.happySpin = 0;
+          careFor(t, 15);
           return;
         }
       }
