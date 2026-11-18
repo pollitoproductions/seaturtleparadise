@@ -643,11 +643,11 @@
     function resetTurtlePositions() {
       const width = canvas.width;
       const height = canvas.height;
+      const rb = rockBounds(width, height);
       turtles.forEach(t => {
         t.x = Math.max(20, Math.min(width - 20, t.x));
         t.y = Math.max(20, Math.min(height - 20, t.y));
-        const out = pushOutOfWaterfallRocks(t.x, t.y, width, height, 20);
-        if (out.inRocks) { t.x = out.x; t.y = out.y; }
+        if (t.x > rb.x0 - 20 && t.y < rb.y1 + 20) t.y = rb.y1 + 20;
       });
       sparkles.forEach(s => {
         s.x = Math.max(0, Math.min(width, s.x));
@@ -1441,11 +1441,13 @@
         // We check the head (the front of the animal) so the push
         // happens just as it reaches the rocks, and the margin clears
         // its body height.
+        const rb = rockBounds(width, height);
         const headX = v.x + Math.cos(v.angle) * 190 * v.scale;
         const headY = v.y + Math.sin(v.angle) * 190 * v.scale;
         const bodyR = 110 * v.scale + 15;
-        const out = pushOutOfWaterfallRocks(headX, headY, width, height, bodyR);
-        if (out.inRocks) { v.x += out.x - headX; v.y += out.y - headY; }
+        if (headX > rb.x0 && headX < rb.x1 && headY > rb.y0 && headY < rb.y1 + bodyR) {
+          v.y = rb.y1 + bodyR;
+        }
         // keep it in the water vertically; if it drifts to an edge, turn it back
         if (v.y < 50 || v.y > height - 50) {
           v.y = Math.max(50, Math.min(height - 50, v.y));
@@ -1521,11 +1523,10 @@
       // glow halo: a soft radial glow behind the bell. (This used to be
       // a big shadowBlur, but that made the game lag on Chromebooks —
       // a plain radial gradient looks the same and is much faster.)
-      const halo = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, r * 2.2);
-      halo.addColorStop(0, j.color);
-      halo.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.globalAlpha = j.alpha * (0.25 + 0.35 * glow);
-      ctx.fillStyle = halo;
+      // halo: a plain soft circle (no gradient — a radial gradient per
+      // jellyfish per frame was part of the freeze)
+      ctx.globalAlpha = j.alpha * (0.10 + 0.15 * glow);
+      ctx.fillStyle = j.color;
       ctx.beginPath();
       ctx.arc(0, 0, r * 2.2, 0, Math.PI * 2);
       ctx.fill();
@@ -1577,9 +1578,6 @@
       ctx.save();
       ctx.translate(f.x, f.y);
       ctx.rotate(f.rot);
-      ctx.shadowColor = 'rgba(0, 15, 30, 0.7)';
-      ctx.shadowBlur = 6;
-      ctx.shadowOffsetY = 3;
       const s = f.size;
       ctx.lineCap = 'round';
       const blades = [
@@ -1791,12 +1789,12 @@
         p.x += Math.cos(p.angle) * p.speed * dt;
         p.y += Math.sin(p.angle) * p.speed * dt * 0.6;
         // stay in the lagoon and out of the rocks
+        const rb = rockBounds(width, height);
         if (p.x < 60) { p.x = 60; p.targetAngle = 0; }
         if (p.x > width - 60) { p.x = width - 60; p.targetAngle = Math.PI; }
         if (p.y < 60) { p.y = 60; p.targetAngle = Math.PI / 2; }
         if (p.y > height - 60) { p.y = height - 60; p.targetAngle = -Math.PI / 2; }
-        const out = pushOutOfWaterfallRocks(p.x, p.y, width, height, 40);
-        if (out.inRocks) { p.x = out.x; p.y = out.y; }
+        if (p.x > rb.x0 - 40 && p.y < rb.y1 + 40) p.y = rb.y1 + 40;
         if (p.happy > 0) p.happy -= dt;
       }
     }
@@ -2111,74 +2109,40 @@
       gameState.food.forEach(f => {
         f.size += (f.targetSize - f.size) * 0.1 * dt;
         if (f.kind === 'seaweed') { drawSeaweed(ctx, f); return; }
-        
+
         ctx.save();
         ctx.translate(f.x, f.y);
         ctx.rotate(f.rot);
-        
-        // Enhanced Drop Shadow for Depth
-        ctx.shadowColor = 'rgba(0, 15, 30, 0.7)'; // Darker, richer shadow
-        ctx.shadowBlur = 8;
-        ctx.shadowOffsetY = 4;
-
-        // Richer, more contrasting rind gradient
-        const rindGrad = ctx.createRadialGradient(-f.size*0.2, -f.size*0.2, f.size * 0.4, 0, 0, f.size);
-        rindGrad.addColorStop(0, '#2d6a3c'); // Lighter green highlight on the edge
-        rindGrad.addColorStop(0.6, '#143d1f'); // Mid-tone dark green
-        rindGrad.addColorStop(1, '#051709'); // Very dark, almost black green for the shadowed edge
-        ctx.fillStyle = rindGrad;
+        // A cucumber slice: flat colors, no shadowBlur and no gradients.
+        // (The old version did a shadowBlur + 5 radial gradients per
+        // slice, and with a lot of tapping that piled up into the
+        // freeze — shadowBlur is the slowest thing a canvas does.)
+        // rind: a slightly bumpy dark-green disc
+        ctx.fillStyle = '#143d1f';
         ctx.beginPath();
         for (let i = 0; i <= Math.PI * 2 + 0.1; i += 0.3) {
-          // Slightly bumpier rind texture
           const r = f.size + Math.sin(i * 7) * (f.size * 0.05);
           if (i === 0) ctx.moveTo(r, 0); else ctx.lineTo(Math.cos(i) * r, Math.sin(i) * r);
         }
         ctx.closePath();
         ctx.fill();
-
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetY = 0;
-        ctx.shadowColor = 'transparent';
-
-        // More pronounced shading on the flesh
-        const fleshGrad = ctx.createRadialGradient(-f.size*0.1, -f.size*0.1, 0, 0, 0, f.size * 0.9);
-        fleshGrad.addColorStop(0, '#ffffff'); // Bright white center highlight
-        fleshGrad.addColorStop(0.4, '#e0f7e6'); // Pale green mid-tone
-        fleshGrad.addColorStop(0.8, '#a3e0b8'); // Solid cucumber flesh color
-        fleshGrad.addColorStop(1, '#5db37a'); // Darker inner shadow near the rind
-        ctx.fillStyle = fleshGrad;
+        // flesh: a pale-green disc with a white highlight
+        ctx.fillStyle = '#a3e0b8';
         ctx.beginPath();
         ctx.arc(0, 0, f.size * 0.88, 0, Math.PI * 2);
         ctx.fill();
-
-        // Shaded seed cavities
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.beginPath();
+        ctx.arc(-f.size * 0.25, -f.size * 0.25, f.size * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        // seeds: three small pale dots (no gradients, no shadow)
+        ctx.fillStyle = '#fffff0';
         for (let i = 0; i < 3; i++) {
           const angle = (Math.PI * 2 / 3) * i;
           ctx.save();
           ctx.rotate(angle);
-          
-          // Cavity background with inner shadow
-          const cavityGrad = ctx.createRadialGradient(f.size * 0.35, 0, 0, f.size * 0.35, 0, f.size * 0.25);
-          cavityGrad.addColorStop(0, 'rgba(150, 210, 170, 0.4)'); // Translucent center
-          cavityGrad.addColorStop(1, 'rgba(100, 180, 130, 0.8)'); // Darker edge for depth
-
-          ctx.fillStyle = cavityGrad;
           ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.bezierCurveTo(f.size * 0.3, f.size * 0.25, f.size * 0.6, f.size * 0.35, f.size * 0.5, 0);
-          ctx.bezierCurveTo(f.size * 0.6, -f.size * 0.35, f.size * 0.3, -f.size * 0.25, 0, 0);
-          ctx.fill();
-
-          // Seeds with slight drop shadows
-          ctx.shadowColor = 'rgba(0,0,0,0.2)';
-          ctx.shadowBlur = 2;
-          ctx.shadowOffsetY = 1;
-          ctx.fillStyle = '#fffff0'; // Slightly off-white seeds
-          ctx.beginPath();
-          ctx.ellipse(f.size * 0.35, f.size * 0.12, f.size * 0.08, f.size * 0.04, 0.3, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.ellipse(f.size * 0.35, -f.size * 0.12, f.size * 0.08, f.size * 0.04, -0.3, 0, Math.PI * 2);
+          ctx.ellipse(f.size * 0.35, 0, f.size * 0.09, f.size * 0.05, 0, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
         }
@@ -2319,9 +2283,10 @@
         // rocks and the cliff face are the wall — below the water's
         // base the lagoon is open, so turtles can swim in the pool at
         // the foot of the fall, just not up under the rocks.
-        var out = pushOutOfWaterfallRocks(t.x, t.y, width, height, 22);
-        if (out.inRocks){
-          t.x = out.x; t.y = out.y;
+        var rb = rockBounds(width, height), rbuf = 22;
+        if(t.x > rb.x0 - rbuf && t.x < rb.x1 && t.y > rb.y0 && t.y < rb.y1 + rbuf){
+          if((t.x - (rb.x0 - rbuf)) < ((rb.y1 + rbuf) - t.y)){ t.x = rb.x0 - rbuf; }
+          else { t.y = rb.y1 + rbuf; }
           t.targetAngle = Math.atan2((height / 2) - t.y, (width / 2) - t.x);
         }
 
@@ -2361,104 +2326,93 @@
 
     // --- Mini waterfall (top-right corner) ---
     // A watercolor waterfall in the corner, like the painting Brant
-    // shared: soft rounded boulders in two tiers, green plants at
-    // the top, and the water pouring down in two steps into a pool.
-    // The whole fall is turned DIAGONALLY so its face points straight
-    // at the center of the screen, cutting off the corner — the face
-    // runs from the top edge down to just left of the button column,
-    // and the water pours down it toward the middle of the lagoon.
-    // The rocks are solid — nothing goes under them — but the pool
-    // at the foot of the fall is open water, so animals can swim in
-    // it, just not up under the rocks.
-    // (Performance: this replaces the old faceted stones, photo
-    // patterns and per-stone clip/crack work with simple soft shapes,
-    // and the waterfall makes NO automatic waves. The old auto-ripple
-    // pushed a wave every 1.4s and those waves piling up at the fall
-    // were what froze the game — the water still animates, via the
-    // streaks, foam and mist, but it no longer spawns waves.)
+    // shared — but drawn as a CROSS-SECTION, the way a real waterfall
+    // reads: the pond itself is top-down, and the waterfall treats
+    // the water's surface as the screen, standing up from it in 3D
+    // at the edge. So the fall has real HEIGHT (rocks stacked up,
+    // water pouring down in two tiers, a pool at the foot), and its
+    // face leans toward the center of the screen, so the water pours
+    // down and in toward the middle of the lagoon. Two tiers of soft
+    // rounded boulders, green plants at the top, a rock wall behind
+    // the water for the 3D mass. The rocks are solid — nothing goes
+    // under them — but the pool at the foot is open water.
+    // (Performance: simple soft shapes, no photo patterns, no
+    // per-stone clip/crack work, and the waterfall makes NO automatic
+    // waves — the old auto-ripple pushed a wave every 1.4s and those
+    // waves piling up at the fall were part of what froze the game.)
     // One scale for the whole waterfall, from BOTH dimensions so it
     // fits in portrait and landscape: it shrinks on narrow screens
     // AND on short screens, so it never takes up half the frame.
     function waterfallScale(width, height){
       return Math.max(0.35, Math.min(0.75, Math.min(width / 1000, height / 800)));
     }
-    // Geometry of the diagonal fall. The face is the diagonal from
-    // the top edge to just left of the button column; its midpoint is
-    // the origin of a local frame where u runs along the face and v
-    // runs down the fall (toward the center). The rocks are the band
-    // v in [-Hback, 0] (behind the face, toward the corner); the pool
-    // is the open water in front of the face (v > 0). H1 is the
-    // middle ledge between the two tiers of rocks.
+    // Geometry of the 3D fall, in screen coords (no rotation — the
+    // fall is drawn upright, its height vertical in the image).
+    // fx is the fall's center x (left of the button column); lipY is
+    // the top of the fall, midY the middle ledge, baseY the bottom
+    // pool; lean is how far left the base sits vs the top, so the
+    // face points at the center. halfW is the rock wall half-width.
     function waterfallGeom(width, height){
       const sc = waterfallScale(width, height);
-      const BTN = 90; // keep the face left of the button column
-      const L = Math.min(width, height) * 0.45; // face extent along top & right
-      const cx = width - BTN - L / 2, cy = L / 2; // face midpoint
-      const W = L * Math.SQRT2; // face length (the diagonal)
-      const Hback = 120 * sc; // rock band depth (two tiers)
-      const H1 = 60 * sc; // middle ledge (between the tiers)
-      const Hpool = 70 * sc; // pool depth past the face
-      return { sc, BTN, L, cx, cy, W, Hback, H1, Hpool };
+      const fx = width - 250 * sc;
+      const lipY = 20 * sc, midY = 125 * sc, baseY = 230 * sc;
+      const lean = 70 * sc, halfW = 150 * sc, wc = 55 * sc;
+      return { sc, fx, lipY, midY, baseY, lean, halfW, wc };
     }
-    // Screen point -> local (u,v) in the waterfall frame.
-    function waterfallLocal(x, y, g){
-      const dx = x - g.cx, dy = y - g.cy, k = Math.SQRT1_2;
-      return { u: (dx + dy) * k, v: (dy - dx) * k };
+    // The fall's centerline x at a height y (the face leans left as
+    // it goes down, toward the center).
+    function fallCx(y, g){
+      return g.fx - g.lean * ((y - g.lipY) / (g.baseY - g.lipY));
     }
-    // Push a point out of the rocks, down the fall into the open pool.
-    // Returns {x, y, inRocks}. The push is along v (toward the center),
-    // so the animal slides out into the pool at the foot of the fall.
-    function pushOutOfWaterfallRocks(x, y, width, height, margin){
+    // The rocks (wall + boulders) are solid — nothing goes under or
+    // behind them. Below the water's base (y1) the lagoon is open, so
+    // animals can swim in the pool at the foot of the fall.
+    function rockBounds(width, height){
       const g = waterfallGeom(width, height);
-      const p = waterfallLocal(x, y, g);
-      if (p.u > -g.W / 2 && p.u < g.W / 2 && p.v > -g.Hback && p.v < 0){
-        const k = Math.SQRT1_2, v2 = margin;
-        return { x: g.cx + k * p.u - k * v2, y: g.cy + k * p.u + k * v2, inRocks: true };
-      }
-      return { x, y, inRocks: false };
+      return { x0: g.fx - g.halfW - g.lean, y0: 0, x1: g.fx + g.halfW, y1: g.baseY };
     }
     function drawWaterfall(ctx, time, width, height){
       const g = waterfallGeom(width, height);
-      const { sc, cx, cy, W, Hback, H1, Hpool } = g;
+      const { sc, fx, lipY, midY, baseY, lean, halfW, wc } = g;
       // watercolor boulder palette (soft, from the painting)
       const BOULDER_COLORS = ['#b9bec2', '#c8c1b1', '#a9aeb3', '#d2ccbc', '#9ea4a9'];
-      // the two tiers of rounded boulders, as [uFrac, vFrac, rxFrac, ryFrac, colorIdx]
-      // u is along the face (fraction of W), v is down the fall
-      // (fraction of Hback, negative = behind the face toward the corner)
+      // the two tiers of rounded boulders, as [yFrac, xOff, rx, ry, colorIdx]
+      // yFrac is how far down the fall (0 = lip, 1 = base); xOff is the
+      // offset from the leaning centerline (in sc units); rx/ry in sc units.
       const BOULDERS = [
         // upper tier
-        [-0.30, -0.92, 0.17, 0.22, 0],
-        [0, -0.95, 0.19, 0.23, 1],
-        [0.30, -0.92, 0.17, 0.22, 2],
-        [-0.37, -0.68, 0.14, 0.18, 3],
-        [0.37, -0.68, 0.14, 0.18, 0],
-        [-0.23, -0.62, 0.10, 0.14, 4],
-        [0.23, -0.62, 0.10, 0.14, 2],
+        [0.08, -105, 52, 24, 0],
+        [0.06, 0, 58, 26, 1],
+        [0.08, 105, 52, 24, 2],
+        [0.30, -125, 48, 22, 3],
+        [0.30, 125, 48, 22, 0],
+        [0.38, -68, 38, 20, 4],
+        [0.38, 68, 38, 20, 2],
         // lower tier
-        [-0.35, -0.32, 0.15, 0.18, 1],
-        [0.35, -0.32, 0.15, 0.18, 3],
-        [-0.22, -0.16, 0.10, 0.14, 0],
-        [0.22, -0.16, 0.10, 0.14, 4],
-        [-0.28, -0.06, 0.13, 0.14, 2],
-        [0, -0.05, 0.15, 0.13, 1],
-        [0.28, -0.06, 0.13, 0.14, 0],
+        [0.62, -120, 50, 24, 1],
+        [0.62, 120, 50, 24, 3],
+        [0.72, -66, 36, 20, 0],
+        [0.72, 66, 36, 20, 4],
+        [0.92, -100, 46, 22, 2],
+        [0.92, 0, 52, 20, 1],
+        [0.92, 100, 46, 22, 0],
       ];
       // a single soft watercolor boulder: a rounded wash, a lighter
       // wash on the upper-left, a soft shadow lower-right, a faint
       // rim — no hard outline, no facets, no cracks.
-      function boulder(u, v, rx, ry, base){
+      function boulder(x, y, rx, ry, base){
         ctx.fillStyle = base;
-        ctx.beginPath(); ctx.ellipse(u, v, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'rgba(255,255,255,0.45)';
-        ctx.beginPath(); ctx.ellipse(u - rx * 0.25, v - ry * 0.3, rx * 0.6, ry * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x - rx * 0.25, y - ry * 0.3, rx * 0.6, ry * 0.55, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'rgba(60,70,80,0.28)';
-        ctx.beginPath(); ctx.ellipse(u + rx * 0.3, v + ry * 0.35, rx * 0.55, ry * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x + rx * 0.3, y + ry * 0.35, rx * 0.55, ry * 0.5, 0, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = 'rgba(90,100,110,0.22)';
         ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.ellipse(u, v, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
       }
       // a soft watercolor plant: leaves fanning up and out, muted greens.
-      function plant(u, v, s){
+      function plant(x, y, s){
         const greens = ['#7a9a6a', '#8aa87a', '#6a8a5a', '#9ab88a', '#7fa06e'];
         for (let i = 0; i < 5; i++){
           const a = -Math.PI / 2 + (i - 2) * 0.38;
@@ -2466,68 +2420,109 @@
           ctx.fillStyle = greens[i % greens.length];
           ctx.globalAlpha = 0.7;
           ctx.beginPath();
-          ctx.ellipse(u + Math.cos(a) * len * 0.5, v + Math.sin(a) * len * 0.5, s * 0.16, len * 0.5, a + Math.PI / 2, 0, Math.PI * 2);
+          ctx.ellipse(x + Math.cos(a) * len * 0.5, y + Math.sin(a) * len * 0.5, s * 0.16, len * 0.5, a + Math.PI / 2, 0, Math.PI * 2);
           ctx.fill();
         }
         ctx.globalAlpha = 1;
       }
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(Math.PI / 4);
-      // 1. the two tiers of boulders
-      for (const [uf, vf, rxf, ryf, ci] of BOULDERS){
-        boulder(uf * W, vf * Hback, rxf * W, ryf * Hback, BOULDER_COLORS[ci]);
+      // 1. the rock wall (the 3D cliff the water pours down) — a
+      // parallelogram leaning left, so its face points at the center.
+      // A soft slate wash, a lighter wash at the top, a darker wash
+      // at the foot: that shading is what makes it read as a wall,
+      // not a flat bank.
+      ctx.beginPath();
+      ctx.moveTo(fx - halfW, lipY - 12 * sc);
+      ctx.lineTo(fx + halfW, lipY - 12 * sc);
+      ctx.lineTo(fx + halfW - lean, baseY);
+      ctx.lineTo(fx - halfW - lean, baseY);
+      ctx.closePath();
+      ctx.fillStyle = '#8a9199';
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.16)';
+      ctx.beginPath();
+      ctx.moveTo(fx - halfW, lipY - 12 * sc);
+      ctx.lineTo(fx + halfW, lipY - 12 * sc);
+      ctx.lineTo(fx + halfW - lean * 0.4, lipY + (baseY - lipY) * 0.35);
+      ctx.lineTo(fx - halfW - lean * 0.4, lipY + (baseY - lipY) * 0.35);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(30,40,50,0.22)';
+      ctx.beginPath();
+      ctx.moveTo(fx - halfW - lean * 0.7, lipY + (baseY - lipY) * 0.7);
+      ctx.lineTo(fx + halfW - lean * 0.7, lipY + (baseY - lipY) * 0.7);
+      ctx.lineTo(fx + halfW - lean, baseY);
+      ctx.lineTo(fx - halfW - lean, baseY);
+      ctx.closePath();
+      ctx.fill();
+      // 2. the two tiers of boulders, sitting on the wall
+      for (const [yf, xOff, rx, ry, ci] of BOULDERS){
+        const y = lipY + yf * (baseY - lipY);
+        boulder(fallCx(y, g) + xOff * sc, y, rx * sc, ry * sc, BOULDER_COLORS[ci]);
       }
-      // 2. greenery at the top corners (and one tuft on the left)
-      plant(-W * 0.44, -Hback * 0.98, 26 * sc);
-      plant(W * 0.44, -Hback * 0.98, 26 * sc);
-      plant(-W * 0.47, -Hback * 0.45, 18 * sc);
-      // 3. the water, in 'water' mode only — two steps, like the painting
+      // 3. greenery at the top of the wall (and one tuft on the left)
+      plant(fallCx(lipY, g) - halfW * 0.85, lipY - 6 * sc, 26 * sc);
+      plant(fallCx(lipY, g) + halfW * 0.85, lipY - 6 * sc, 26 * sc);
+      plant(fallCx(lipY + (baseY - lipY) * 0.45, g) - halfW * 0.95, lipY + (baseY - lipY) * 0.45, 18 * sc);
+      // 4. the water, in 'water' mode only — two steps, like the painting.
+      // Each fall is a leaning band (a quadrilateral following the face),
+      // so the water pours down and toward the center.
       if (mode === 'water'){
-        const wc = W * 0.19; // half-width of the water channel
-        // upper fall: soft wash from the top to the middle ledge
+        // a leaning band of water from y0 to y1 (both on the face)
+        function fallBand(y0, y1){
+          const c0 = fallCx(y0, g), c1 = fallCx(y1, g);
+          ctx.beginPath();
+          ctx.moveTo(c0 - wc, y0);
+          ctx.lineTo(c0 + wc, y0);
+          ctx.lineTo(c1 + wc, y1);
+          ctx.lineTo(c1 - wc, y1);
+          ctx.closePath();
+          ctx.fill();
+        }
         ctx.fillStyle = 'rgba(224, 240, 255, 0.78)';
-        ctx.fillRect(-wc, -Hback, wc * 2, Hback - H1);
-        // lower fall: middle ledge to the face
-        ctx.fillStyle = 'rgba(224, 240, 255, 0.78)';
-        ctx.fillRect(-wc, -H1, wc * 2, H1);
-        // animated streaks, flowing down both falls
+        fallBand(lipY, midY); // upper fall
+        fallBand(midY, baseY); // lower fall
+        // animated streaks, flowing down both falls (following the lean)
         ctx.strokeStyle = 'rgba(255,255,255,0.65)';
         ctx.lineWidth = 2;
         for (let i = 0; i < 6; i++){
-          const sx = -wc + (i + 0.5) * (wc * 2 / 6);
+          const xOff = -wc + (i + 0.5) * (wc * 2 / 6);
           // upper fall streak
-          const off1 = (time * 0.045 + i * 31) % (Hback - H1);
-          const y1 = -Hback + off1;
-          ctx.beginPath(); ctx.moveTo(sx, y1); ctx.lineTo(sx, Math.min(y1 + 26 * sc, -H1)); ctx.stroke();
+          const p1 = (time * 0.00045 + i * 0.17) % 1;
+          const y1a = lipY + p1 * (midY - lipY);
+          ctx.beginPath();
+          ctx.moveTo(fallCx(y1a, g) + xOff, y1a);
+          ctx.lineTo(fallCx(Math.min(y1a + 26 * sc, midY), g) + xOff, Math.min(y1a + 26 * sc, midY));
+          ctx.stroke();
           // lower fall streak
-          const off2 = (time * 0.045 + i * 47) % H1;
-          const y2 = -H1 + off2;
-          ctx.beginPath(); ctx.moveTo(sx, y2); ctx.lineTo(sx, Math.min(y2 + 26 * sc, 0)); ctx.stroke();
+          const p2 = (time * 0.00045 + i * 0.23) % 1;
+          const y2a = midY + p2 * (baseY - midY);
+          ctx.beginPath();
+          ctx.moveTo(fallCx(y2a, g) + xOff, y2a);
+          ctx.lineTo(fallCx(Math.min(y2a + 26 * sc, baseY), g) + xOff, Math.min(y2a + 26 * sc, baseY));
+          ctx.stroke();
         }
         // middle ledge: a small pool where the upper fall lands
         ctx.fillStyle = 'rgba(214, 236, 252, 0.85)';
-        ctx.beginPath(); ctx.ellipse(0, -H1, wc * 1.25, 9 * sc, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(fallCx(midY, g), midY, wc * 1.25, 9 * sc, 0, 0, Math.PI * 2); ctx.fill();
         // bottom pool: where the lower fall lands, spreading into the lagoon
         ctx.fillStyle = 'rgba(214, 236, 252, 0.8)';
-        ctx.beginPath(); ctx.ellipse(0, Hpool * 0.35, wc * 1.6, 12 * sc, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(fallCx(baseY, g), baseY, wc * 1.6, 12 * sc, 0, 0, Math.PI * 2); ctx.fill();
         // foam bubbles at the foot
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         for (let i = 0; i < 8; i++){
-          const fx = (i - 3.5) * (wc * 0.32);
-          const fy = Hpool * 0.3 + Math.sin(time * 0.003 + i * 1.7) * 3 * sc;
+          const fxc = fallCx(baseY, g) + (i - 3.5) * (wc * 0.32);
+          const fy = baseY + Math.sin(time * 0.003 + i * 1.7) * 3 * sc;
           const fr = (3 + (i % 3)) * sc;
-          ctx.beginPath(); ctx.arc(fx, fy, fr, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(fxc, fy, fr, 0, Math.PI * 2); ctx.fill();
         }
         // soft mist puffs drifting up from the pool (plain circles, no gradients)
         for (let i = 0; i < 3; i++){
-          const mx2 = (i - 1) * wc * 0.7;
-          const my2 = Hpool * 0.5 - ((time * 0.02 + i * 23) % 26) * sc;
+          const mx2 = fallCx(baseY, g) + (i - 1) * wc * 0.7;
+          const my2 = baseY - 6 * sc - ((time * 0.02 + i * 23) % 26) * sc;
           ctx.fillStyle = 'rgba(235, 245, 255, 0.14)';
           ctx.beginPath(); ctx.arc(mx2, my2, (14 + i * 4) * sc, 0, Math.PI * 2); ctx.fill();
         }
       }
-      ctx.restore();
     }
 
       // 5.5 Rare visitors (stingray / baby stingray / baby whale shark)
