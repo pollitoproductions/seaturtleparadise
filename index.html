@@ -547,17 +547,47 @@
       greenSeaTurtle: { backFinBase: '#5c8a5c', backFinShadow: '#2d4d2d', neck: '#6b996b', headHi: '#d9edd9', headMid: '#7ab37a', headShad: '#3d663d', beak: '#263326', frontFinInner: '#3d663d', frontFinMid: '#7ab37a', frontFinTip: '#2d4d2d', shellPeak: '#cce6cc', shellMid: '#5c8a5c', shellBase: '#3d663d', shellRim: '#1f331f' }
     };
 
-    // Helper to reset turtle positions after resize/orientation
+    // Helper to keep everything inside the window after a resize or
+    // orientation change. Nothing teleports: each animal, food bit, shell,
+    // jellyfish and ball stays where it was, just pulled inside the new
+    // window (and turtles out of the waterfall rocks) if it ended up
+    // outside. (The old version re-randomized all turtle positions, so
+    // rotating the device scattered every turtle to a new random spot.)
     function resetTurtlePositions() {
       const width = canvas.width;
       const height = canvas.height;
+      const rb = rockBounds(width);
       turtles.forEach(t => {
-        t.x = Math.random() * width;
-        t.y = Math.random() * height;
+        t.x = Math.max(20, Math.min(width - 20, t.x));
+        t.y = Math.max(20, Math.min(height - 20, t.y));
+        if (t.x > rb.x0 - 20 && t.y < rb.y1 + 20) t.y = rb.y1 + 20;
       });
       sparkles.forEach(s => {
-        s.x = Math.random() * width;
-        s.y = Math.random() * height;
+        s.x = Math.max(0, Math.min(width, s.x));
+        s.y = Math.max(0, Math.min(height, s.y));
+      });
+      gameState.food.forEach(f => {
+        f.x = Math.max(10, Math.min(width - 10, f.x));
+        f.y = Math.max(10, Math.min(height - 10, f.y));
+      });
+      collectibles.forEach(c => {
+        c.x = Math.max(20, Math.min(width - 20, c.x));
+        c.y = Math.max(height * 0.7, Math.min(height - 10, c.y));
+      });
+      jellyfish.forEach(j => {
+        j.x = Math.max(40, Math.min(width - 40, j.x));
+        j.y = Math.max(40, Math.min(height - 40, j.y));
+      });
+      gameState.balls.forEach(b => {
+        b.x = Math.max(30, Math.min(width - 30, b.x));
+        b.y = Math.max(30, Math.min(height - 30, b.y));
+      });
+      visitors.forEach(v => {
+        v.y = Math.max(50, Math.min(height - 50, v.y));
+      });
+      pets.forEach(p => {
+        p.x = Math.max(60, Math.min(width - 60, p.x));
+        p.y = Math.max(60, Math.min(height - 60, p.y));
       });
     }
 
@@ -1870,6 +1900,14 @@
 
     // --- Main Render Loop ---
     let lastTime = 0;
+    // When the tab was hidden, requestAnimationFrame pauses and lastTime
+    // goes stale — without this, the first frame back would compute a huge
+    // delta and the game would jump. Resetting lastTime makes the first
+    // frame back a normal one instead. (The dt cap below is a second
+    // safety net for the same thing.)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) lastTime = 0;
+    });
     // Cache the background + vignette gradients: they only change when
     // the window size or the day/night theme changes, so rebuilding them
     // every frame was wasted work that made Chromebooks lag.
