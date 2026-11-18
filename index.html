@@ -2398,54 +2398,101 @@
       // shrink a little more on narrow screens so the lagoon has room.
       const sc = Math.max(0.45, Math.min(1, width / 900));   // shrink on narrow screens
       const fallX = width - 220 * sc;                       // left of the buttons
+      // Deterministic 0..1 hash — the stones' shapes must be identical
+      // every frame, or they would shimmer. (Math.random() per frame
+      // would wobble them.)
+      const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
       // Rocks: a wide bank filling the WHOLE top-right corner — four
       // staggered tiers of stones, overlapping so they read as one solid
       // rocky bank, not a little pile. The bank runs from the top edge
       // down to the lagoon and from the right edge left across the corner.
+      // The colours are deliberately varied — cool slate, warm brown-grey,
+      // dark basalt, a mossy hint — so the bank reads as stone, not one
+      // flat grey cloud. (The old bank was smooth ovals in one grey, and
+      // on a phone it read as raining clouds.)
       const rocks = [
         // top tier (along the top edge)
-        {x:-205, y:18, rx:62, ry:28, rot:0.04, c:'#64707d'},
-        {x:-110, y:14, rx:58, ry:26, rot:-0.05, c:'#5b6470'},
-        {x:-15, y:20, rx:64, ry:30, rot:0.06, c:'#6b7280'},
-        {x:80, y:15, rx:60, ry:27, rot:-0.03, c:'#64707d'},
-        {x:170, y:18, rx:62, ry:28, rot:0.05, c:'#5b6470'},
+        {x:-205, y:18, rx:62, ry:28, rot:0.04, c:'#6b7280'},
+        {x:-110, y:14, rx:58, ry:26, rot:-0.05, c:'#7d6f5f'},
+        {x:-15, y:20, rx:64, ry:30, rot:0.06, c:'#5b6470'},
+        {x:80, y:15, rx:60, ry:27, rot:-0.03, c:'#8a7a68'},
+        {x:170, y:18, rx:62, ry:28, rot:0.05, c:'#4a5560'},
         // second tier
-        {x:-235, y:60, rx:60, ry:30, rot:-0.07, c:'#5b6470'},
-        {x:-140, y:58, rx:64, ry:31, rot:0.05, c:'#6b7280'},
-        {x:-45, y:62, rx:62, ry:30, rot:-0.04, c:'#64707d'},
-        {x:50, y:58, rx:66, ry:32, rot:0.06, c:'#5b6470'},
+        {x:-235, y:60, rx:60, ry:30, rot:-0.07, c:'#3f4a55'},
+        {x:-140, y:58, rx:64, ry:31, rot:0.05, c:'#64707d'},
+        {x:-45, y:62, rx:62, ry:30, rot:-0.04, c:'#7d6f5f'},
+        {x:50, y:58, rx:66, ry:32, rot:0.06, c:'#5a6a5a'},
         {x:145, y:60, rx:60, ry:29, rot:-0.05, c:'#6b7280'},
-        {x:205, y:58, rx:56, ry:28, rot:0.04, c:'#64707d'},
+        {x:205, y:58, rx:56, ry:28, rot:0.04, c:'#5b6470'},
         // third tier
-        {x:-210, y:105, rx:62, ry:31, rot:0.06, c:'#6b7280'},
-        {x:-115, y:102, rx:60, ry:30, rot:-0.05, c:'#64707d'},
-        {x:-20, y:108, rx:64, ry:32, rot:0.04, c:'#5b6470'},
-        {x:75, y:104, rx:62, ry:31, rot:-0.06, c:'#6b7280'},
-        {x:170, y:106, rx:60, ry:30, rot:0.05, c:'#64707d'},
+        {x:-210, y:105, rx:62, ry:31, rot:0.06, c:'#7d8894'},
+        {x:-115, y:102, rx:60, ry:30, rot:-0.05, c:'#454f5c'},
+        {x:-20, y:108, rx:64, ry:32, rot:0.04, c:'#6e6258'},
+        {x:75, y:104, rx:62, ry:31, rot:-0.06, c:'#64707d'},
+        {x:170, y:106, rx:60, ry:30, rot:0.05, c:'#8a7a68'},
         // base tier (meets the lagoon)
-        {x:-175, y:148, rx:64, ry:31, rot:-0.05, c:'#5b6470'},
-        {x:-80, y:150, rx:62, ry:30, rot:0.06, c:'#6b7280'},
-        {x:15, y:148, rx:64, ry:31, rot:-0.04, c:'#64707d'},
-        {x:110, y:150, rx:60, ry:30, rot:0.05, c:'#5b6470'},
-        {x:190, y:148, rx:58, ry:29, rot:-0.06, c:'#6b7280'}
+        {x:-175, y:148, rx:64, ry:31, rot:-0.05, c:'#4a5560'},
+        {x:-80, y:150, rx:62, ry:30, rot:0.06, c:'#7d6f5f'},
+        {x:15, y:148, rx:64, ry:31, rot:-0.04, c:'#5b6470'},
+        {x:110, y:150, rx:60, ry:30, rot:0.05, c:'#6b7280'},
+        {x:190, y:148, rx:58, ry:29, rot:-0.06, c:'#3f4a55'}
       ];
       ctx.save();
-      rocks.forEach(r => {
+      rocks.forEach((r, ri) => {
         ctx.save();
         ctx.translate(fallX + r.x * sc, r.y);
         ctx.rotate(r.rot);
+        const RX = r.rx * sc, RY = r.ry * sc;
+        // an irregular faceted stone, not a smooth oval: 8 vertices with
+        // the radius jittered ±18% — facets and corners are what make a
+        // shape read as rock instead of a cloud
+        const pts = [];
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          const rr = 1 + (hash(ri * 31 + k * 7 + 3) - 0.5) * 0.36;
+          pts.push([Math.cos(a) * RX * rr, Math.sin(a) * RY * rr]);
+        }
         ctx.beginPath();
-        ctx.ellipse(0, 0, r.rx * sc, r.ry * sc, 0, 0, Math.PI * 2);
+        pts.forEach((p, k) => { if (k === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); });
+        ctx.closePath();
         ctx.fillStyle = r.c;
         ctx.fill();
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = 'rgba(20, 30, 40, 0.65)';
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = 'rgba(15, 25, 35, 0.7)';
         ctx.stroke();
-        // light catching the top of each stone
+        // facet shading: a dark lower face and a lit top face, so each
+        // stone has dimension instead of one flat grey
+        ctx.save();
+        ctx.clip();
         ctx.beginPath();
-        ctx.ellipse(0, -r.ry * sc * 0.45, r.rx * sc * 0.7, r.ry * sc * 0.32, 0, Math.PI, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.16)';
+        ctx.ellipse(0, RY * 0.55, RX * 1.05, RY * 0.6, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 10, 20, 0.28)';
         ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(0, -RY * 0.5, RX * 0.7, RY * 0.32, 0, Math.PI, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.20)';
+        ctx.fill();
+        ctx.restore();
+        // speckles: tiny darker and lighter grains in the stone
+        for (let s = 0; s < 3; s++) {
+          const hx = hash(ri * 17 + s * 5 + 11), hy = hash(ri * 23 + s * 3 + 7);
+          ctx.beginPath();
+          ctx.arc((hx - 0.5) * RX * 1.2, (hy - 0.5) * RY * 1.1, Math.max(1, 1.6 * sc), 0, Math.PI * 2);
+          ctx.fillStyle = s % 2 ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.22)';
+          ctx.fill();
+        }
+        // a crack across the face on every other stone
+        if (ri % 2 === 0) {
+          const cx0 = (hash(ri * 13 + 1) - 0.5) * RX;
+          const cy0 = (hash(ri * 19 + 2) - 0.5) * RY * 0.6;
+          ctx.beginPath();
+          ctx.moveTo(cx0, cy0);
+          ctx.lineTo(cx0 + RX * 0.3, cy0 + RY * 0.25);
+          ctx.lineTo(cx0 + RX * 0.45, cy0 - RY * 0.1);
+          ctx.strokeStyle = 'rgba(10, 20, 30, 0.4)';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
         ctx.restore();
       });
       // Falling water (only in water mode — the wave setting)
@@ -2456,7 +2503,8 @@
         const shift = 120 * sc;  // how far left the base sits (the diagonal)
         const fallH = baseY - lipY;
         ctx.save();
-        // wide diagonal sheet, leaning left as it falls
+        // wide diagonal sheet, leaning left as it falls — a little more
+        // opaque now, with a bright lip where it pours over the rocks
         ctx.beginPath();
         ctx.moveTo(topL, lipY);
         ctx.lineTo(topR, lipY);
@@ -2464,33 +2512,73 @@
         ctx.lineTo(topL - shift, baseY);
         ctx.closePath();
         const wg = ctx.createLinearGradient(0, lipY, 0, baseY);
-        wg.addColorStop(0, 'rgba(190, 235, 255, 0.7)');
-        wg.addColorStop(1, 'rgba(190, 235, 255, 0.25)');
+        wg.addColorStop(0, 'rgba(215, 240, 255, 0.85)');
+        wg.addColorStop(0.5, 'rgba(190, 235, 255, 0.55)');
+        wg.addColorStop(1, 'rgba(190, 235, 255, 0.3)');
         ctx.fillStyle = wg;
         ctx.fill();
         ctx.clip();
-        // animated streaks running diagonally down the sheet
-        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-        ctx.lineWidth = 2;
-        for(let i = 0; i < 6; i++){
-          const startX = topL + ((i * 47 + 20) % (topR - topL));
-          const off = (time * 0.12 + i * 38) % fallH;
+        // broad soft currents: a few wide, faint bands flowing down
+        for (let i = 0; i < 4; i++) {
+          const cx = topL + ((i * 97 + 30) % (topR - topL));
+          const off = (time * 0.05 + i * 60) % fallH;
+          const bx = cx - off * (shift / fallH);
+          const by = lipY + off;
+          ctx.beginPath();
+          ctx.moveTo(bx, by);
+          ctx.lineTo(bx - 40 * (shift / fallH), by + 40);
+          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+          ctx.lineWidth = 10 * sc;
+          ctx.stroke();
+        }
+        // many thin fast streaks, all different widths, speeds and
+        // brightnesses — the falling water reads as flowing currents,
+        // not drizzle
+        for (let i = 0; i < 12; i++) {
+          const startX = topL + ((i * 37 + 20) % (topR - topL));
+          const speed = 0.10 + hash(i * 3 + 1) * 0.08;
+          const off = (time * speed + i * 29) % fallH;
           const sx = startX - off * (shift / fallH);
           const sy = lipY + off;
+          const len = 20 + hash(i * 5 + 2) * 26;
           ctx.beginPath();
           ctx.moveTo(sx, sy);
-          ctx.lineTo(sx - 26 * (shift / fallH), sy + 26);
+          ctx.lineTo(sx - len * (shift / fallH), sy + len);
+          ctx.strokeStyle = 'rgba(255,255,255,' + (0.35 + hash(i * 7 + 4) * 0.35).toFixed(2) + ')';
+          ctx.lineWidth = 1 + hash(i * 11 + 5) * 2;
           ctx.stroke();
         }
         ctx.restore();
-        // foam along the base
-        const baseCx = (topL + topR) / 2 - shift;  // centre of the base edge
-        for(let i = 0; i < 6; i++){
-          const fx = (topL - shift) + 18 * sc + i * ((topR - topL - 36 * sc) / 5);
-          const fr = 5 + Math.sin(time * 0.006 + i * 1.7) * 2;
+        // foamy lip where the water pours over the rocks
+        for (let i = 0; i < 8; i++) {
+          const lx = topL + 12 * sc + i * ((topR - topL - 24 * sc) / 7);
+          const lr = 3 + Math.sin(time * 0.008 + i * 2.1) * 1.5;
           ctx.beginPath();
-          ctx.arc(fx, baseY + 4, Math.max(2, fr), 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(230, 245, 255, 0.75)';
+          ctx.arc(lx, lipY + 2, Math.max(1.5, lr), 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(240, 250, 255, 0.85)';
+          ctx.fill();
+        }
+        // foam at the base: a frothy band of bubbles of all sizes
+        const baseCx = (topL + topR) / 2 - shift;  // centre of the base edge
+        for (let i = 0; i < 12; i++) {
+          const fx = (topL - shift) + 10 * sc + i * ((topR - topL - 20 * sc) / 11);
+          const fr = 3 + hash(i * 3 + 8) * 6 + Math.sin(time * 0.006 + i * 1.7) * 1.5;
+          ctx.beginPath();
+          ctx.arc(fx, baseY + 4 + Math.sin(time * 0.005 + i) * 1.5, Math.max(2, fr), 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(230, 245, 255,' + (0.6 + hash(i * 5 + 9) * 0.3).toFixed(2) + ')';
+          ctx.fill();
+        }
+        // mist: soft pale puffs drifting up from where the water hits
+        for (let m = 0; m < 3; m++) {
+          const mx = baseCx + (hash(m * 7 + 20) - 0.5) * (topR - topL) * 0.6;
+          const my = baseY - 14 - ((time * 0.02 + m * 47) % 34);
+          const mr = 16 + hash(m * 11 + 30) * 14;
+          const mg = ctx.createRadialGradient(mx, my, 0, mx, my, mr);
+          mg.addColorStop(0, 'rgba(235, 245, 255, 0.16)');
+          mg.addColorStop(1, 'rgba(235, 245, 255, 0)');
+          ctx.fillStyle = mg;
+          ctx.beginPath();
+          ctx.arc(mx, my, mr, 0, Math.PI * 2);
           ctx.fill();
         }
         // a gentle ripple every ~1.4s
