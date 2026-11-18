@@ -82,6 +82,25 @@
         <circle cx="12" cy="12" r="2.5" fill="#fff" stroke="#c22" stroke-width="0.5"/>
       </svg>
     </button>
+    <button
+      id="fullBtn"
+      class="w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md transition-all duration-300 bg-slate-900/50 border border-slate-600 text-white hover:bg-slate-800/60 shadow-lg"
+      title="Fullscreen"
+      aria-label="Fullscreen"
+    >
+      <svg id="fullIconExpand" viewBox="0 0 24 24" fill="none" class="w-6 h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+        <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+        <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+        <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+      </svg>
+      <svg id="fullIconShrink" viewBox="0 0 24 24" fill="none" class="w-6 h-6 hidden" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+        <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+        <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+        <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+      </svg>
+    </button>
   </div>
 
   <!-- Collection menu button (top-left) — tap to see what you've collected -->
@@ -153,6 +172,27 @@
     dayNightBtn.addEventListener('click', () => {
       theme = theme === 'night' ? 'day' : 'night';
       updateThemeUI();
+    });
+
+    // Fullscreen: same toggle the other Pollito games use. The button sits
+    // at the bottom of the right-hand button column. (iPhone Safari does
+    // not support element fullscreen, so there it is a no-op, like Dash.)
+    const fullBtn = document.getElementById('fullBtn');
+    const fullIconExpand = document.getElementById('fullIconExpand');
+    const fullIconShrink = document.getElementById('fullIconShrink');
+    function toggleFull() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+      } else {
+        document.exitFullscreen();
+      }
+    }
+    fullBtn.addEventListener('click', toggleFull);
+    document.addEventListener('fullscreenchange', () => {
+      const on = !!document.fullscreenElement;
+      fullIconExpand.classList.toggle('hidden', on);
+      fullIconShrink.classList.toggle('hidden', !on);
+      fullBtn.title = on ? 'Exit fullscreen' : 'Fullscreen';
     });
 
     // --- Water sound (soft river) audio ---
@@ -647,14 +687,20 @@
     });
 
     // --- Drawing Helper Functions ---
+    // A soft shadow under each turtle. This used to be a ctx.filter blur,
+    // but a 40px blur drawn 19 times a frame is the single most expensive
+    // thing in the game on a Chromebook — a radial gradient that fades
+    // from dark to transparent looks the same and costs almost nothing.
     const drawShadow = (ctx) => {
       ctx.save();
       ctx.translate(80, 100);
       ctx.scale(1, 1.15);
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 150);
+      g.addColorStop(0, 'rgba(0, 5, 15, 0.4)');
+      g.addColorStop(1, 'rgba(0, 5, 15, 0)');
+      ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(0, 0, 150, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0, 5, 15, 0.4)';
-      ctx.filter = 'blur(40px)';
       ctx.fill();
       ctx.restore();
     };
@@ -909,11 +955,11 @@
       shellGrad.addColorStop(0.7, palette.shellBase);
       shellGrad.addColorStop(1, palette.shellRim);
       
+      // The shell's edge already has a dark stroke for definition (below),
+      // so no shadowBlur is needed here — it was blurring all 19 shells
+      // every frame, which is expensive on a Chromebook.
       ctx.fillStyle = shellGrad;
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-      ctx.shadowBlur = 8;
       ctx.fill();
-      ctx.shadowBlur = 0;
 
       // Added explicit dark stroke to ensure shading around the edges of all shells
       ctx.lineWidth = 4;
@@ -1378,16 +1424,19 @@
       // little faster, like little baby jellyfish following the big ones.
       if (isNight && jellyfish.length < 6 && Math.random() < 0.08 * dt) {
         const c = JELLY_COLORS[Math.floor(Math.random() * JELLY_COLORS.length)];
-        const isBaby = Math.random() < 0.45;
+        // every jellyfish starts as a baby and grows up: it spawns small
+        // (12–18) with a target adult size (22–40), then grows a little
+        // each frame until it reaches that size and becomes an adult.
         jellyfish.push({
           x: 60 + Math.random() * (width - 120),
           y: 80 + Math.random() * (height - 160),
-          size: isBaby ? 12 + Math.random() * 6 : 22 + Math.random() * 18,
+          size: 12 + Math.random() * 6,
+          adultSize: 22 + Math.random() * 18,
           color: c.color, light: c.light,
           phase: Math.random() * 1000,
           lit: 0, alpha: 0,
-          drift: isBaby ? 0.25 + Math.random() * 0.25 : 0.15 + Math.random() * 0.2,
-          baby: isBaby
+          drift: 0.25 + Math.random() * 0.25,
+          baby: true
         });
       }
       for (let i = jellyfish.length - 1; i >= 0; i--) {
@@ -1395,6 +1444,16 @@
         j.alpha += (isNight ? 0.03 : -0.03) * dt;
         if (j.alpha <= 0 && !isNight) { jellyfish.splice(i, 1); continue; }
         j.alpha = Math.max(0, Math.min(1, j.alpha));
+        // grow up: a baby gets a little bigger each frame until it reaches
+        // its adult size, then it slows down (adult drift and pulse).
+        if (j.baby) {
+          j.size += 0.03 * dt;
+          if (j.size >= j.adultSize) {
+            j.size = j.adultSize;
+            j.baby = false;
+            j.drift = 0.15 + Math.random() * 0.2;
+          }
+        }
         j.y -= j.drift * dt;
         j.x += Math.sin(time * 0.0008 + j.phase) * 0.3 * dt;
         if (j.lit > 0) j.lit = Math.max(0, j.lit - 0.01 * dt);
@@ -1913,8 +1972,25 @@
     // every frame was wasted work that made Chromebooks lag.
     let bgCache = { w: 0, h: 0, theme: '', grad: null };
     let vigCache = { w: 0, h: 0, grad: null };
+    // Adaptive quality: this is not a high-end game, so on a slow device
+    // it should get simpler instead of choppy. We track a rolling
+    // frames-per-second average; if it stays low, lowQuality turns on
+    // (god rays off, half the sparkles and particles). If the frame rate
+    // recovers, it turns back off.
+    let fpsEMA = 60;
+    let lowQuality = false;
+    let qualityFrames = 0;
     function render(time) {
       const dt = lastTime ? Math.min((time - lastTime) / 16.6667, 4) : 1;
+      if (lastTime) {
+        const fps = 1000 / Math.max(1, time - lastTime);
+        fpsEMA = fpsEMA * 0.95 + fps * 0.05;
+        qualityFrames++;
+        if (qualityFrames > 180) { // after ~3s warmup
+          if (!lowQuality && fpsEMA < 42) lowQuality = true;
+          else if (lowQuality && fpsEMA > 55) lowQuality = false;
+        }
+      }
       lastTime = time;
       const { width, height } = canvas;
 
@@ -1953,7 +2029,8 @@
       // 1.5 Sparkles (Sun glimmers)
       ctx.save();
       ctx.globalCompositeOperation = 'screen';
-      sparkles.forEach(s => {
+      sparkles.forEach((s, idx) => {
+        if (lowQuality && idx % 2) return; // half the sparkles when slow
         // Calculate twinkle alpha based on time and phase
         const alpha = (Math.sin(time * s.twinkleSpeed + s.phase) + 1) * 0.5 * 0.95;
         if (alpha > 0.05) {
@@ -1965,7 +2042,8 @@
       });
       ctx.restore();
 
-      // 2. God Rays
+      // 2. God Rays (skipped entirely when the device is struggling)
+      if (!lowQuality) {
       ctx.save();
       ctx.globalCompositeOperation = 'screen';
       const rayTime = time * 0.0003;
@@ -1981,6 +2059,7 @@
         ctx.fill();
       }
       ctx.restore();
+      }
 
       // 3. Food
       gameState.food.forEach(f => {
@@ -2277,12 +2356,15 @@
     // edge, top edge down to the base tier. Turtles are pushed out of
     // this box; the water below it stays open.
     function rockBounds(width){
-      var sc = Math.max(0.6, Math.min(1, width / 900));
+      var sc = Math.max(0.45, Math.min(1, width / 900));
       return { x0: width - 515 * sc, y0: 0, x1: width, y1: 181 * sc };
     }
     let lastFallWave = 0;
     function drawWaterfall(ctx, time, width, height){
-      const sc = Math.max(0.6, Math.min(1, width / 900));   // shrink on narrow screens
+      // On a phone the waterfall used to fill most of the screen (the old
+      // floor of 0.6 kept it big even on a 390px screen); 0.45 lets it
+      // shrink a little more on narrow screens so the lagoon has room.
+      const sc = Math.max(0.45, Math.min(1, width / 900));   // shrink on narrow screens
       const fallX = width - 220 * sc;                       // left of the buttons
       // Rocks: a wide bank filling the WHOLE top-right corner — four
       // staggered tiers of stones, overlapping so they read as one solid
@@ -2461,7 +2543,8 @@
       }
 
       // 6. Particles
-      particles.forEach(p => {
+      particles.forEach((p, idx) => {
+        if (lowQuality && idx % 2) return; // half the particles when slow
         p.y -= p.speed * dt;
         p.x += Math.sin(time * 0.001 + p.offset) * 0.4 * dt;
         if (p.y < -20) { p.y = height + 20; p.x = Math.random() * width; }
