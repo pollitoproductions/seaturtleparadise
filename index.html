@@ -1416,10 +1416,10 @@
         v.x += Math.cos(v.angle) * v.speed * dt;
         v.y += Math.sin(v.angle) * v.speed * dt;
         // Rocks are solid: if a visitor is about to swim under the
-        // rock bank, push it down below the rocks. It can swim under
-        // the waterfall water, but not behind the stones. We check the
-        // head (the front of the animal) so the push happens just as
-        // it reaches the rocks, and the margin clears its body height.
+        // waterfall, push it down below the rocks and the cliff face.
+        // We check the head (the front of the animal) so the push
+        // happens just as it reaches the rocks, and the margin clears
+        // its body height.
         const rb = rockBounds(width);
         const headX = v.x + Math.cos(v.angle) * 190 * v.scale;
         const headY = v.y + Math.sin(v.angle) * 190 * v.scale;
@@ -1489,7 +1489,11 @@
         j.y -= j.drift * dt;
         j.x += Math.sin(time * 0.0008 + j.phase) * 0.3 * dt;
         if (j.lit > 0) j.lit = Math.max(0, j.lit - 0.01 * dt);
-        if (j.y < -60) { j.y = height + 40; j.x = 60 + Math.random() * (width - 120); }
+        // stay inside the frame: when one drifts up to the top edge it
+        // cycles back to the bottom (in frame, not below it), and the
+        // sideways sway is clamped so it can't drift off the sides
+        if (j.y < j.size + 8) { j.y = height - j.size - 8; j.x = 60 + Math.random() * (width - 120); }
+        j.x = Math.max(j.size + 8, Math.min(width - j.size - 8, j.x));
       }
     }
     function drawJellyfish(ctx, time, j){
@@ -2296,42 +2300,20 @@
         t.y += Math.sin(t.angle) * t.speed * dt;
 
 
-        // Increase negative padding so turtles can go off screen by about 20%
-        // Allow turtles to wander slightly off-screen to reach near-edge food, but not disappear.
-        // Track offscreen time and nudge turtles back if they're gone too long.
-        const padding = Math.max(width, height) * 0.12 * -1;
+        // Every turtle stays inside the frame — no drifting off-screen.
+        // (The old code let them wander ~12% past the edge to reach
+        // food; now they stay fully visible, and can still reach food
+        // at the edge from 36px in.)
+        const padding = 36;
         t.x = Math.max(padding, Math.min(width - padding, t.x));
         t.y = Math.max(padding, Math.min(height - padding, t.y));
 
-        // Offscreen timeout logic: if turtle is outside visible bounds, increment timer
-        const isVisible = t.x >= 0 && t.x <= width && t.y >= 0 && t.y <= height;
-        if (!isVisible) {
-          t.offscreenTime = (t.offscreenTime || 0) + dt;
-        } else {
-          t.offscreenTime = 0;
-        }
-
-        // If a turtle has been offscreen for too long, more forcefully return it to visible area
-        if (t.offscreenTime > 60) { // ~1 second
-          // Clamp turtle to a safe visible area (5% inset) so it won't disappear
-          const insetX = Math.max(20, width * 0.05);
-          const insetY = Math.max(20, height * 0.05);
-          t.x = Math.max(insetX, Math.min(width - insetX, t.x));
-          t.y = Math.max(insetY, Math.min(height - insetY, t.y));
-
-          // Snap its angle toward center and boost speed so it visibly returns
-          t.targetAngle = Math.atan2((height / 2) - t.y, (width / 2) - t.x);
-          t.angle = t.targetAngle;
-          t.speed = t.baseSpeed * 2.0;
-          t.offscreenTime = 0; // reset after repositioning
-        }
-
-        // Rocks are solid: a turtle that swims into the rock bank gets
+        // Rocks are solid: a turtle that swims into the waterfall gets
         // pushed back out (to the nearest edge — left or bottom) and
         // steered back toward the lagoon. The 22px margin keeps its
         // body clear of the stones instead of overlapping them. The
-        // waterfall water below the rocks is NOT blocked — turtles can
-        // swim under the falling water in the lagoon.
+        // whole waterfall is blocked now — stones, cliff face and
+        // falling water — so nothing swims under it any more.
         var rb = rockBounds(width), rbuf = 22;
         if(t.x > rb.x0 - rbuf && t.x < rb.x1 && t.y > rb.y0 && t.y < rb.y1 + rbuf){
           if((t.x - (rb.x0 - rbuf)) < ((rb.y1 + rbuf) - t.y)){ t.x = rb.x0 - rbuf; }
@@ -2387,9 +2369,16 @@
     // match the drawn rock bank: from the leftmost stone to the right
     // edge, top edge down to the base tier. Turtles are pushed out of
     // this box; the water below it stays open.
+    // The WHOLE waterfall is solid now — not just the rock bank, but
+    // the cliff face and the falling water below it too. The face juts
+    // down-left toward the centre, so the box reaches further left
+    // (width - 605*sc, the face's jutting point) and further down
+    // (277, the face's base) than the stones alone. Nothing swims
+    // under the waterfall any more. (These numbers must match the
+    // face in drawWaterfall: faceBaseL = width - 605*sc, faceBaseY = 277.)
     function rockBounds(width){
       var sc = Math.max(0.45, Math.min(1, width / 900));
-      return { x0: width - 515 * sc, y0: 0, x1: width, y1: 181 * sc };
+      return { x0: width - 605 * sc, y0: 0, x1: width, y1: 277 };
     }
     let lastFallWave = 0;
     function drawWaterfall(ctx, time, width, height){
@@ -2402,6 +2391,74 @@
       // every frame, or they would shimmer. (Math.random() per frame
       // would wobble them.)
       const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+      // The falling water's geometry — hoisted here because the cliff
+      // face below uses the same numbers (the face sits behind the
+      // sheet, and the water block further down reuses them).
+      const lipY = 60;    // where the water pours over the rocks
+      const baseY = 235;  // where it hits the lagoon
+      const topL = fallX - 210 * sc, topR = fallX + 190 * sc;  // spans the whole rock bank
+      const shift = 120 * sc;  // how far left the base sits (the diagonal)
+      const fallH = baseY - lipY;
+      // The precipice face: a dark rock wall behind the falling water,
+      // leaning down-left toward the centre of the screen, so the water
+      // pours down a cliff instead of floating in front of flat stones.
+      // Its bottom-left corner juts further left and lower than the
+      // water's base — a rocky point reaching toward the middle of the
+      // lagoon. Drawn first, so the stones sit on top of it and the
+      // water falls down in front of it.
+      const faceTopL = topL - 20 * sc, faceTopR = topR + 20 * sc;
+      const faceBaseL = topL - shift - 55 * sc, faceBaseR = topR - shift + 15 * sc;
+      const faceTopY = lipY - 15, faceBaseY = baseY + 42;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(faceTopL, faceTopY);
+      ctx.lineTo(faceTopR, faceTopY);
+      ctx.lineTo(faceBaseR, faceBaseY - 14);
+      ctx.lineTo(faceBaseL, faceBaseY);
+      ctx.closePath();
+      const fg = ctx.createLinearGradient(0, faceTopY, 0, faceBaseY);
+      fg.addColorStop(0, '#5a6a7a');
+      fg.addColorStop(0.55, '#3a4653');
+      fg.addColorStop(1, '#232c36');
+      ctx.fillStyle = fg;
+      ctx.fill();
+      ctx.clip();
+      // vertical striations running down the face, following its lean
+      const faceLean = faceTopL - faceBaseL;  // how far left the face leans, top to bottom
+      for (let i = 0; i < 10; i++) {
+        const sx = faceTopL + ((i + 0.5) / 10) * (faceTopR - faceTopL);
+        ctx.beginPath();
+        ctx.moveTo(sx, faceTopY);
+        ctx.lineTo(sx - faceLean, faceBaseY);
+        ctx.strokeStyle = i % 2 ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      // a couple of cracks in the face
+      for (let c = 0; c < 2; c++) {
+        const cx0 = faceTopL + hash(c * 7 + 41) * (faceTopR - faceTopL);
+        const cy0 = faceTopY + 40 + hash(c * 11 + 43) * 60;
+        ctx.beginPath();
+        ctx.moveTo(cx0, cy0);
+        ctx.lineTo(cx0 - 12 - hash(c * 3 + 47) * 14, cy0 + 34);
+        ctx.lineTo(cx0 - 22 - hash(c * 5 + 53) * 10, cy0 + 62);
+        ctx.strokeStyle = 'rgba(10, 18, 26, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.restore();
+      // outline the face so its edge reads against the water and the lagoon
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(faceTopL, faceTopY);
+      ctx.lineTo(faceTopR, faceTopY);
+      ctx.lineTo(faceBaseR, faceBaseY - 14);
+      ctx.lineTo(faceBaseL, faceBaseY);
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(15, 25, 35, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
       // Rocks: a wide bank filling the WHOLE top-right corner — four
       // staggered tiers of stones, overlapping so they read as one solid
       // rocky bank, not a little pile. The bank runs from the top edge
@@ -2495,13 +2552,10 @@
         }
         ctx.restore();
       });
-      // Falling water (only in water mode — the wave setting)
+      // Falling water (only in water mode — the wave setting).
+      // lipY, baseY, topL, topR, shift and fallH are defined above
+      // (the cliff face uses them too).
       if(mode === 'water'){
-        const lipY = 60;    // where the water pours over the rocks
-        const baseY = 235;  // where it hits the lagoon
-        const topL = fallX - 210 * sc, topR = fallX + 190 * sc;  // spans the whole rock bank
-        const shift = 120 * sc;  // how far left the base sits (the diagonal)
-        const fallH = baseY - lipY;
         ctx.save();
         // wide diagonal sheet, leaning left as it falls — a little more
         // opaque now, with a bright lip where it pours over the rocks
