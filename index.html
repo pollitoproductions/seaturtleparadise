@@ -2,17 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Sea Turtle Paradise</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { margin: 0; overflow: hidden; background-color: #021a19; touch-action: none; }
-    canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+    /* Track the VISIBLE window on a phone, not the full height including
+       the browser toolbar (100vh counts the toolbar; 100dvh follows it
+       as it shows and hides). The body.relative selector beats Tailwind's
+       h-screen class so this actually takes effect. */
+    body.relative { height: 100dvh; }
+    /* The canvas fills the body exactly (100%, not 100vw/100vh — vw can
+       run wider than the visible window on a phone, which made the page
+       overflow, the browser zoom out, and the buttons' tap targets land
+       somewhere other than where the buttons are drawn). Its internal
+       resolution is set from clientWidth/clientHeight in resizeCanvas so
+       it always matches the size on screen. */
+    canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+    /* Buttons must answer a tap promptly: manipulation disables the
+       double-tap-to-zoom gesture on them, so rapid kid taps register as
+       taps instead of fighting the browser's zoom handling. */
+    button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   </style>
 </head>
 <body class="relative w-full h-screen overflow-hidden bg-[#021a19]">
 
-  <div class="absolute top-8 right-8 flex flex-col gap-4 z-20 pointer-events-auto">
+  <div class="absolute top-[max(2rem,env(safe-area-inset-top))] right-[max(2rem,env(safe-area-inset-right))] flex flex-col gap-4 z-20 pointer-events-auto">
     <button
       id="waterBtn"
       class="w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md transition-all duration-300 bg-cyan-500/30 border border-cyan-200 text-white shadow-[0_0_15px_rgba(34,211,238,0.5)] scale-110"
@@ -104,7 +119,7 @@
   </div>
 
   <!-- Collection menu button (top-left) — tap to see what you've collected -->
-  <button id="menuBtn" class="absolute top-8 left-8 z-20 w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md bg-slate-900/50 border border-slate-600 text-white text-2xl shadow-lg" title="My Collection" aria-label="My Collection">🐢</button>
+  <button id="menuBtn" class="absolute top-[max(2rem,env(safe-area-inset-top))] left-[max(2rem,env(safe-area-inset-left))] z-20 w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md bg-slate-900/50 border border-slate-600 text-white text-2xl shadow-lg" title="My Collection" aria-label="My Collection">🐢</button>
   <!-- Collection menu panel (hidden until you tap the button) -->
   <div id="menuPanel" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 hidden w-72 max-w-[85vw] rounded-2xl backdrop-blur-md bg-slate-900/80 border border-slate-600 text-white p-5 shadow-2xl">
     <div class="flex items-center justify-between mb-3">
@@ -138,11 +153,19 @@
 
 
     // Always match canvas internal resolution to visible size to prevent stretching.
+    // Size the canvas from its ACTUAL on-screen size (clientWidth /
+    // clientHeight), not window.innerWidth/innerHeight — on a phone the
+    // window size can include the browser toolbar area, which made the
+    // canvas wider/taller than the visible window and threw the buttons'
+    // tap targets off. The CSS already makes it fill the body, so this
+    // only sets the internal resolution to match.
     function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      canvas.style.width = `${window.innerWidth}px`;
-      canvas.style.height = `${window.innerHeight}px`;
+      const w = canvas.clientWidth || window.innerWidth;
+      const h = canvas.clientHeight || window.innerHeight;
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
     }
 
     window.addEventListener('resize', resizeCanvas);
@@ -477,6 +500,15 @@
       lastX: 0,
       lastY: 0
     };
+
+    // Koi Chi rule: nothing a kid can spam may grow without a cap. Food
+    // and waves are both pushed on every tap and drag, and each one costs
+    // a gradient + shadow + a distance check against every turtle, every
+    // frame — so a hundred rapid taps used to freeze the game. Both are
+    // capped now; when a new one arrives past the cap, the oldest goes.
+    const MAX_FOOD = 30, MAX_WAVES = 40;
+    function pushFood(f) { gameState.food.push(f); if (gameState.food.length > MAX_FOOD) gameState.food.shift(); }
+    function pushWave(w) { gameState.waves.push(w); if (gameState.waves.length > MAX_WAVES) gameState.waves.shift(); }
 
     // --- UI Update Logic ---
     const ballBtn = document.getElementById('ballBtn');
@@ -1298,7 +1330,7 @@
     // baby whale shark enters or leaves.
     function makeSplash(x, y){
       splashes.push({ x, y, age: 0, life: 50 });
-      gameState.waves.push({ x, y, age: 0, life: 70, speed: 1.6, source: 'splash' });
+      pushWave({ x, y, age: 0, life: 70, speed: 1.6, source: 'splash' });
     }
 
     function spawnVisitor(kind, x, y, dir){
@@ -2463,7 +2495,7 @@
         }
         // a gentle ripple every ~1.4s
         if(time - lastFallWave > 1400){
-          gameState.waves.push({ x: baseCx + (Math.random() - 0.5) * 60, y: baseY + 6, age: 0, life: 130, speed: 1.1, source: 'waterfall' });
+          pushWave({ x: baseCx + (Math.random() - 0.5) * 60, y: baseY + 6, age: 0, life: 130, speed: 1.1, source: 'waterfall' });
           lastFallWave = time;
         }
       }
@@ -2628,9 +2660,9 @@
       const clampedX = Math.max(foodPadding * -1, Math.min(canvas.width + foodPadding, x));
       const clampedY = Math.max(foodPadding * -1, Math.min(canvas.height + foodPadding, y));
       if (mode === 'food') {
-        gameState.food.push({ x: clampedX, y: clampedY, size: 0, targetSize: foodKind === 'seaweed' ? 9 : 7, rot: Math.random() * Math.PI * 2, kind: foodKind });
+        pushFood({ x: clampedX, y: clampedY, size: 0, targetSize: foodKind === 'seaweed' ? 9 : 7, rot: Math.random() * Math.PI * 2, kind: foodKind });
         // mark waves created by food drops so turtles won't be scared by them
-        gameState.waves.push({ x: clampedX, y: clampedY, age: 0, life: 60, speed: 1.5, source: 'food' });
+        pushWave({ x: clampedX, y: clampedY, age: 0, life: 60, speed: 1.5, source: 'food' });
       } else if (mode === 'ball') {
         // drop a beach ball into the water for the turtles to play with
         const colors = ['#ff5a5a', '#4fc3f7', '#ffd93d', '#81c784', '#b388ff'];
@@ -2643,7 +2675,7 @@
         });
         if (gameState.balls.length > 8) gameState.balls.shift();
       } else {
-        gameState.waves.push({ x, y, age: 0, life: 100, speed: 2.5, source: 'water' });
+        pushWave({ x, y, age: 0, life: 100, speed: 2.5, source: 'water' });
       }
     };
 
@@ -2656,7 +2688,7 @@
       const dx = x - gameState.lastX;
       const dy = y - gameState.lastY;
       if (Math.hypot(dx, dy) > 25) {
-        gameState.waves.push({ x, y, age: 0, life: 80, speed: 2 });
+        pushWave({ x, y, age: 0, life: 80, speed: 2 });
         gameState.lastX = x;
         gameState.lastY = y;
       }
